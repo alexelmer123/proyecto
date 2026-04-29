@@ -16,7 +16,10 @@ $money = static fn(float $n): string  => 'S/. ' . number_format($n, 0, ',', '.')
             deuda activa: <strong class="mono"><?= $h($money((float) $resumen['total_deuda'])) ?></strong>
         </p>
     </div>
-    <a href="<?= BASE_URL ?>/pedido/crear" class="btn btn--primary">+ Nuevo pedido</a>
+    <div class="page-head__actions">
+        <a href="<?= BASE_URL ?>/pedido/exportar<?= $estado ? '?estado=' . urlencode($estado) : '' ?>" class="btn btn--ghost">↓ Exportar CSV</a>
+        <a href="<?= BASE_URL ?>/pedido/crear" class="btn btn--primary">+ Nuevo pedido</a>
+    </div>
 </header>
 
 <section class="estado-tabs">

@@ -101,6 +101,25 @@ final class ProveedorController extends Controller
         $this->redirect('/proveedor/index');
     }
 
+    public function exportar(): void
+    {
+        $this->requireAuth();
+        $filas = array_map(fn($p) => [
+            $p['nombre'],
+            $p['contacto']   ?? '',
+            $p['telefono']   ?? '',
+            $p['email']      ?? '',
+            $p['ciudad_nombre'] ?? '',
+            $p['pais_nombre']   ?? '',
+            $p['descripcion_productos'] ?? '',
+            (int) $p['estado'] === 1 ? 'Activo' : 'Archivado',
+        ], $this->proveedores->listadoConUbicacion());
+        Exporter::csv('proveedores', [
+            'Nombre', 'Contacto', 'Teléfono', 'Email',
+            'Ciudad', 'País', 'Productos que provee', 'Estado',
+        ], $filas);
+    }
+
     private function emptyForm(): array
     {
         return [

@@ -33,6 +33,28 @@ final class PedidoController extends Controller
         ]);
     }
 
+    public function exportar(): void
+    {
+        $this->requireAuth();
+        $estado = trim((string) ($_GET['estado'] ?? ''));
+        $estado = in_array($estado, ['pendiente', 'pagado', 'deuda'], true) ? $estado : null;
+        $filas  = array_map(fn($p) => [
+            $p['numero'],
+            $p['proveedor_nombre'] ?? '',
+            $p['fecha_pedido'],
+            $p['fecha_entrega'] ?? '',
+            number_format((float) $p['total'],  2, '.', ''),
+            number_format((float) $p['pagado'], 2, '.', ''),
+            number_format((float) $p['saldo'],  2, '.', ''),
+            $p['estado'],
+            $p['observacion'] ?? '',
+        ], $this->pedidos->listar($estado, 5000, 0));
+        Exporter::csv('pedidos', [
+            'Número', 'Proveedor', 'Fecha pedido', 'Fecha entrega',
+            'Total', 'Pagado', 'Saldo', 'Estado', 'Observación',
+        ], $filas);
+    }
+
     public function crear(): void
     {
         $this->requireAuth();

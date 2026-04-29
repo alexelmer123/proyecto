@@ -186,6 +186,34 @@ final class ProductoController extends Controller
         ]);
     }
 
+    public function exportar(): void
+    {
+        $this->requireAuth();
+        $q   = trim((string) ($_GET['q']        ?? ''));
+        $cat = isset($_GET['categoria']) && $_GET['categoria'] !== '' ? (int) $_GET['categoria'] : null;
+        $filas = array_map(fn($p) => [
+            $p['codigo'],
+            $p['nombre'],
+            $p['descripcion'] ?? '',
+            $p['categoria_nombre']  ?? '',
+            $p['proveedor_nombre']  ?? '',
+            $p['unidad'],
+            $p['ancho']  ?? '',
+            $p['alto']   ?? '',
+            $p['grosor'] ?? '',
+            number_format((float) $p['precio_compra'], 2, '.', ''),
+            number_format((float) $p['precio_venta'],  2, '.', ''),
+            (int) $p['stock_actual'],
+            (int) $p['stock_minimo'],
+            (int) $p['estado'] === 1 ? 'Activo' : 'Inactivo',
+        ], $this->productos->buscar($q, $cat));
+        Exporter::csv('productos', [
+            'Código', 'Nombre', 'Descripción', 'Categoría', 'Proveedor',
+            'Unidad', 'Ancho (mm)', 'Alto (mm)', 'Grosor (mm)',
+            'Precio compra', 'Precio venta', 'Stock actual', 'Stock mínimo', 'Estado',
+        ], $filas);
+    }
+
     /** Endpoint JSON usado por app.js al cambiar el selector de producto. */
     public function stockActual(string $id = '0'): void
     {

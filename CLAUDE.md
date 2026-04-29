@@ -17,7 +17,7 @@ There is no git history and no root-level build/lint/test tooling — do not inv
 
 1. Apache reads [vidrios-inventory/.htaccess](vidrios-inventory/.htaccess), blocks direct access to `app|core|config|database`, and rewrites everything else to `public/index.php?url=<path>`.
 2. [public/index.php](vidrios-inventory/public/index.php) `session_start()`s, defines `ROOT`, manually requires the five `core/` classes (`Database`, `Model`, `Controller`, `Router`, `Paginator`), then registers a `spl_autoload_register` that resolves classes from `app/controllers` and `app/models`. Core classes are **not** autoloaded — they must be loaded up front. [core/Paginator.php](vidrios-inventory/core/Paginator.php) is the shared list-pagination helper (offset/limit + rendered `« 1 2 3 »` nav with filter-preserving querystrings); use it instead of hand-rolling pagination on new index views.
-3. [core/Router.php](vidrios-inventory/core/Router.php) parses `/<segment>/<segment>/<params...>`, converts the first segment to Studly-case + `Controller` suffix and the second to camelCase action. Default route is `ProductoController@index`. All remaining segments are passed as positional arguments to the action via `call_user_func_array`.
+3. [core/Router.php](vidrios-inventory/core/Router.php) parses `/<segment>/<segment>/<params...>`, converts the first segment to Studly-case + `Controller` suffix and the second to camelCase action. Default route is `DashboardController@index`. All remaining segments are passed as positional arguments to the action via `call_user_func_array`.
 4. Controllers extend [core/Controller.php](vidrios-inventory/core/Controller.php), which provides `render()`, `redirect()`, session/role helpers (`requireAuth`, `requireAdmin`), and `setFlash()`. `render()` wraps the view in `layouts/header` + `layouts/sidebar` + `layouts/footer` unless called with `withLayout: false`. It always exposes `$usuario`, `$stockBajoCount`, and `$flash` to the view and `extract()`s the supplied data array.
 5. Models extend [app/models/BaseModel.php](vidrios-inventory/app/models/BaseModel.php) → [core/Model.php](vidrios-inventory/core/Model.php), which wraps the PDO singleton from [core/Database.php](vidrios-inventory/core/Database.php). All queries use prepared statements and backticked identifiers; columns are bound with `pdoType()` for correct `PDO::PARAM_*`.
 
@@ -42,11 +42,11 @@ php vidrios-inventory/database/install.php
 # 3. Serve. Production target is Apache + mod_rewrite (the .htaccess is required). The built-in PHP server ignores .htaccess, so routes will 404 under `php -S` unless you front it with a router script.
 ```
 
-DB credentials live in [vidrios-inventory/config/database.php](vidrios-inventory/config/database.php) (defaults: `127.0.0.1:3306`, db `vidrios_inventory`, user `root`, empty password, utf8mb4). App-wide constants (`APP_NAME`, `UPLOAD_DIR`, `DEBUG`, timezone `America/Bogota`) live in [vidrios-inventory/config/config.php](vidrios-inventory/config/config.php). `DEBUG=true` prints full stack traces from the router's catch-all; flip it off for production.
+DB credentials live in [vidrios-inventory/config/database.php](vidrios-inventory/config/database.php) (defaults: `127.0.0.1:3306`, db `vidrios_inventory`, user `root`, empty password, utf8mb4). App-wide constants (`APP_NAME`, `UPLOAD_DIR`, `DEBUG`, timezone `America/Bogota`) live in [vidrios-inventory/config/config.php](vidrios-inventory/config/config.php). `DEBUG=true` prints full stack traces from the router's catch-all; flip it off for production. `BASE_URL` is set to `/proyecto/vidrios-inventory`; `Controller::redirect()` prepends it to any path that starts with `/`, so redirect targets must be relative to that prefix. `STOCK_CRITICO_DEFAULT=5` is the global low-stock fallback if `stock_minimo` is not set on the product.
 
 ### Conventions that are not obvious from file names
 
-- All PHP files use `declare(strict_types=1);` and controllers/models are `final`. Keep that.
+- All PHP files use `declare(strict_types=1);`. Concrete controllers and models are `final`; the base `Controller` is `abstract`. Keep that pattern.
 - Identifiers, UI copy, flash messages, and comments are in Spanish. Match the existing tone when adding new screens.
 - Product images are stored at `public/img/productos/` (`UPLOAD_DIR` / `UPLOAD_URL` from config). The `.htaccess` blocks `app|core|config|database` but **not** `public/`, so anything under `public/` is web-reachable.
 
@@ -62,5 +62,5 @@ Currently vendored (check the lockfile for the canonical list and source repos):
 
 ## Platform notes
 
-- Working directory is `c:\xampp\htdocs\proyecto` on Windows (XAMPP's docroot), but the shell is bash — use Unix syntax (`/dev/null`, forward slashes) in commands.
+- Working directory is `D:\laragon\www\Alex ayuda\proyecto` on Windows (Laragon's docroot), but the shell is bash — use Unix syntax (`/dev/null`, forward slashes) in commands.
 - The vidrios-inventory app assumes Apache with `mod_rewrite` and `mod_headers`; XAMPP/Laragon/WAMP all work. The PHP built-in server does not read `.htaccess`.

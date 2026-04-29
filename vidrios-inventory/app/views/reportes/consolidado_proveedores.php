@@ -14,6 +14,7 @@ $money = static fn(float $n): string  => 'S/. ' . number_format($n, 0, ',', '.')
             deuda activa <strong class="mono text-rose"><?= $h($money((float) $totales['deuda_activa'])) ?></strong>
         </p>
     </div>
+    <a href="<?= BASE_URL ?>/reporte/exportarConsolidadoProveedores" class="btn btn--ghost">↓ Exportar CSV</a>
 </header>
 
 <section class="table-shell">

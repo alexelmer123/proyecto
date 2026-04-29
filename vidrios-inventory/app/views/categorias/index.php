@@ -8,7 +8,10 @@ $h = static fn(?string $s): string => htmlspecialchars((string) $s, ENT_QUOTES, 
         <h1 class="page-head__title">Categorías</h1>
         <p class="page-head__caption">Familias y sub-tipos de cristal.</p>
     </div>
-    <a href="<?= BASE_URL ?>/categoria/crear" class="btn btn--primary">+ Nueva categoría</a>
+    <div class="page-head__actions">
+        <a href="<?= BASE_URL ?>/categoria/exportar" class="btn btn--ghost">↓ Exportar CSV</a>
+        <a href="<?= BASE_URL ?>/categoria/crear" class="btn btn--primary">+ Nueva categoría</a>
+    </div>
 </header>
 
 <section class="cards-grid">

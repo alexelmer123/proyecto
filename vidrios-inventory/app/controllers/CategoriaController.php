@@ -19,6 +19,21 @@ final class CategoriaController extends Controller
         ]);
     }
 
+    public function exportar(): void
+    {
+        $this->requireAuth();
+        $filas = array_map(fn($c) => [
+            (int) $c['id'],
+            $c['nombre'],
+            $c['descripcion'] ?? '',
+            (int) ($c['total_productos'] ?? 0),
+            (int) $c['estado'] === 1 ? 'Activa' : 'Inactiva',
+        ], $this->categorias->conConteoDeProductos());
+        Exporter::csv('categorias', [
+            'ID', 'Nombre', 'Descripción', 'Total productos', 'Estado',
+        ], $filas);
+    }
+
     public function crear(): void
     {
         $this->requireAuth();

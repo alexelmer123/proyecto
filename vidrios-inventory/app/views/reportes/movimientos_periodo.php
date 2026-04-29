@@ -12,6 +12,7 @@ foreach ($datos as $d) {
         <h1 class="page-head__title">Movimientos por período</h1>
         <p class="page-head__caption">Entradas y salidas agrupadas por <?= $agrupacion === 'mes' ? 'mes' : 'día' ?>.</p>
     </div>
+    <a href="<?= BASE_URL ?>/reporte/exportarMovimientosPorPeriodo?agrupacion=<?= urlencode($agrupacion) ?>&desde=<?= urlencode($desde) ?>&hasta=<?= urlencode($hasta) ?>" class="btn btn--ghost">↓ Exportar CSV</a>
 </header>
 
 <form method="get" action="<?= BASE_URL ?>/reporte/movimientosPorPeriodo" class="filters">

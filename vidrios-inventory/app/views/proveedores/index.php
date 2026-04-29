@@ -8,7 +8,10 @@ $h = static fn(?string $s): string => htmlspecialchars((string) $s, ENT_QUOTES, 
         <h1 class="page-head__title">Proveedores</h1>
         <p class="page-head__caption"><?= count($proveedores) ?> contactos registrados.</p>
     </div>
-    <a href="<?= BASE_URL ?>/proveedor/crear" class="btn btn--primary">+ Nuevo proveedor</a>
+    <div class="page-head__actions">
+        <a href="<?= BASE_URL ?>/proveedor/exportar" class="btn btn--ghost">↓ Exportar CSV</a>
+        <a href="<?= BASE_URL ?>/proveedor/crear" class="btn btn--primary">+ Nuevo proveedor</a>
+    </div>
 </header>
 
 <section class="table-shell">

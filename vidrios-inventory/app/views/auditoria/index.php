@@ -14,6 +14,13 @@ $selectedAccion  = $filtros['accion']  ?? '';
         <h1 class="page-head__title">Bitácora de auditoría</h1>
         <p class="page-head__caption">Registro de cambios y accesos al sistema. <?= (int) $paginator->total ?> entradas en total.</p>
     </div>
+    <?php
+    $qsAud = http_build_query(array_filter([
+        'entidad' => $filtros['entidad'] ?? '',
+        'accion'  => $filtros['accion']  ?? '',
+    ], static fn($v) => $v !== ''));
+    ?>
+    <a href="<?= BASE_URL ?>/auditoria/exportar<?= $qsAud ? '?' . $qsAud : '' ?>" class="btn btn--ghost">↓ Exportar CSV</a>
 </header>
 
 <form method="get" action="<?= BASE_URL ?>/auditoria/index" class="filters">

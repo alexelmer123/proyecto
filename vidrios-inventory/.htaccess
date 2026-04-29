@@ -2,7 +2,7 @@
 Options -Indexes
 
 RewriteEngine On
-RewriteBase /proyecto/vidrios-inventory/
+RewriteBase /Alex%20ayuda/proyecto/vidrios-inventory/
 
 # Bloquear acceso directo a directorios sensibles
 RewriteRule ^(app|core|config|database)/ - [F,L]

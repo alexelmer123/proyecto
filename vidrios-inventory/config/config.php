@@ -3,7 +3,7 @@
 define('APP_NAME', 'Vidrios Centro Puno E.I.R.L.');
 define('APP_TAGLINE', 'Inventario de vidrios y cristales');
 define('APP_VERSION', '1.0.0');
-define('BASE_URL','/proyecto/vidrios-inventory');
+define('BASE_URL','/Alex%20ayuda/proyecto/vidrios-inventory');
 
 // Zona horaria por defecto
 date_default_timezone_set('America/Bogota');

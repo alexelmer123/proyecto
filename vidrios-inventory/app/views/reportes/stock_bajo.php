@@ -8,7 +8,10 @@ $h = static fn(?string $s): string => htmlspecialchars((string) $s, ENT_QUOTES, 
         <h1 class="page-head__title">Stock crítico</h1>
         <p class="page-head__caption"><?= count($productos) ?> productos en o por debajo del mínimo.</p>
     </div>
-    <a href="<?= BASE_URL ?>/movimiento/registrarEntrada" class="btn btn--primary">+ Registrar entrada</a>
+    <div class="page-head__actions">
+        <a href="<?= BASE_URL ?>/reporte/exportarStockBajo" class="btn btn--ghost">↓ Exportar CSV</a>
+        <a href="<?= BASE_URL ?>/movimiento/registrarEntrada" class="btn btn--primary">+ Registrar entrada</a>
+    </div>
 </header>
 
 <section class="table-shell">

@@ -51,6 +51,33 @@ final class MovimientoController extends Controller
         ]);
     }
 
+    public function exportar(): void
+    {
+        $this->requireAuth();
+        $productoId = isset($_GET['producto']) && $_GET['producto'] !== '' ? (int) $_GET['producto'] : null;
+        $tipo  = trim((string) ($_GET['tipo']  ?? ''));
+        $desde = trim((string) ($_GET['desde'] ?? ''));
+        $hasta = trim((string) ($_GET['hasta'] ?? ''));
+        $filas = array_map(fn($m) => [
+            $m['created_at'],
+            $m['producto_codigo'],
+            $m['producto_nombre'],
+            $m['tipo'],
+            (int) $m['cantidad'],
+            (int) $m['stock_anterior'],
+            (int) $m['stock_nuevo'],
+            $m['usuario_nombre']   ?? '',
+            $m['proveedor_nombre'] ?? '',
+            $m['observacion']      ?? '',
+        ], $this->movimientos->historial(
+            $productoId, $tipo ?: null, $desde ?: null, $hasta ?: null
+        ));
+        Exporter::csv('movimientos', [
+            'Fecha', 'Código producto', 'Producto', 'Tipo', 'Cantidad',
+            'Stock anterior', 'Stock nuevo', 'Usuario', 'Proveedor', 'Observación',
+        ], $filas);
+    }
+
     public function registrarEntrada(): void
     {
         $this->requireAuth();

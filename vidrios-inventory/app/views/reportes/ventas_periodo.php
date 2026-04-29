@@ -14,6 +14,7 @@ $labels = ['dia' => 'Día', 'semana' => 'Semana', 'mes' => 'Mes'];
             del <?= $h($desde) ?> al <?= $h($hasta) ?>
         </p>
     </div>
+    <a href="<?= BASE_URL ?>/reporte/exportarVentas?agrupacion=<?= urlencode($agrupacion) ?>&desde=<?= urlencode($desde) ?>&hasta=<?= urlencode($hasta) ?>" class="btn btn--ghost">↓ Exportar CSV</a>
 </header>
 
 <form method="get" action="<?= BASE_URL ?>/reporte/ventas" class="filters">

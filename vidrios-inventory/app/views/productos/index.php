@@ -13,9 +13,10 @@ $h = static fn(?string $s): string => htmlspecialchars((string) $s, ENT_QUOTES, 
         <h1 class="page-head__title">Productos en taller</h1>
         <p class="page-head__caption"><?= (int) $paginator->total ?> piezas activas en el inventario.</p>
     </div>
-    <a href="<?= BASE_URL ?>/producto/crear" class="btn btn--primary">
-        <span>+ Nuevo producto</span>
-    </a>
+    <div class="page-head__actions">
+        <a href="<?= BASE_URL ?>/producto/exportar?q=<?= urlencode($q) ?>&categoria=<?= (int) $categoriaId ?>" class="btn btn--ghost">↓ Exportar CSV</a>
+        <a href="<?= BASE_URL ?>/producto/crear" class="btn btn--primary">+ Nuevo producto</a>
+    </div>
 </header>
 
 <form method="get" action="<?= BASE_URL ?>/producto/index" class="filters">

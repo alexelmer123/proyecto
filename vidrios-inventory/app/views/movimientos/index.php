@@ -10,6 +10,15 @@ $h = static fn(?string $s): string => htmlspecialchars((string) $s, ENT_QUOTES, 
         <p class="page-head__caption"><?= (int) $paginator->total ?> movimientos en total (paginados de a <?= (int) $paginator->perPage ?>).</p>
     </div>
     <div class="page-head__actions">
+        <?php
+        $qs = http_build_query(array_filter([
+            'producto' => $filtro['productoId'] ?? '',
+            'tipo'     => $filtro['tipo']       ?? '',
+            'desde'    => $filtro['desde']      ?? '',
+            'hasta'    => $filtro['hasta']      ?? '',
+        ], static fn($v) => $v !== '' && $v !== null));
+        ?>
+        <a href="<?= BASE_URL ?>/movimiento/exportar<?= $qs ? '?' . $qs : '' ?>" class="btn btn--ghost">↓ Exportar CSV</a>
         <a href="<?= BASE_URL ?>/movimiento/registrarEntrada" class="btn btn--primary">+ Entrada</a>
         <a href="<?= BASE_URL ?>/movimiento/registrarSalida"  class="btn btn--ghost">− Salida</a>
     </div>

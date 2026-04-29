@@ -9,6 +9,7 @@ $money = static fn(float $v): string => 'S/. ' . number_format($v, 0, ',', '.');
         <h1 class="page-head__title">Valor del inventario</h1>
         <p class="page-head__caption">Suma de stock × precio de compra por cada producto activo.</p>
     </div>
+    <a href="<?= BASE_URL ?>/reporte/exportarValorInventario" class="btn btn--ghost">↓ Exportar CSV</a>
     <div class="hero-metric">
         <span class="hero-metric__label">Capital inmovilizado</span>
         <span class="hero-metric__value mono"><?= $money($total) ?></span>
