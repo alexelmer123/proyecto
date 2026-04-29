@@ -1,0 +1,23 @@
+# Desactivar listado de directorios
+Options -Indexes
+
+RewriteEngine On
+RewriteBase /proyecto/vidrios-inventory/
+
+# Bloquear acceso directo a directorios sensibles
+RewriteRule ^(app|core|config|database)/ - [F,L]
+
+# Raíz: forzar entrada al front-controller
+RewriteRule ^$ public/index.php [L]
+
+# Si la petición no es a un archivo o directorio real, reescribir hacia public/index.php
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ public/index.php?url=$1 [QSA,L]
+
+# Cabeceras básicas de seguridad
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options "nosniff"
+    Header set X-Frame-Options "SAMEORIGIN"
+    Header set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>
