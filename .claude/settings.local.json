@@ -36,14 +36,15 @@
       "Bash(C:\\\\xampp2\\\\php\\\\php.exe *)",
       "Bash(\"/c/xampp2/php/php.exe\" \"D:\\\\laragon\\\\www\\\\Alex ayuda\\\\proyecto\\\\vidrios-inventory\\\\database\\\\diagnostico.php\")",
       "Bash(mysql -u root vidrios_inventory -e \"DESCRIBE materiales; DESCRIBE categorias; DESCRIBE tipos_material;\")",
-      "PowerShell(& \"C:\\\\laragon\\\\bin\\\\mysql\\\\mysql-8.0.30-winx64\\\\bin\\\\mysql.exe\" -u root vidrios_inventory -e \"DESCRIBE materiales; DESCRIBE categorias; DESCRIBE tipos_material;\" 2>&1 | Select-Object -First 80)",
-      "PowerShell(& \"D:\\\\laragon\\\\bin\\\\mysql\\\\mysql-8.4.3-winx64\\\\bin\\\\mysql.exe\" -u root vidrios_inventory -e \"DESCRIBE materiales; DESCRIBE categorias; DESCRIBE tipos_material;\" 2>&1)",
+      "PowerShell(& \"D:\\\\laragon\\\\bin\\\\mysql\\\\mysql-8.4.3-winx64\\\\bin\\\\mysql.exe\" -u root vidrios_inventory -e \"DESCRIBE materiales; DESCRIBE categorias; DESCRIBE tipos_material;\" 2>&1 | Select-Object -First 80)",
       "PowerShell(& \"D:\\\\laragon\\\\bin\\\\mysql\\\\mysql-8.4.3-winx64\\\\bin\\\\mysql.exe\" -u root vidrios_inventory -e \"SELECT CONSTRAINT_NAME, TABLE_NAME, COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA='vidrios_inventory' AND REFERENCED_TABLE_NAME IN \\('tipos_material','categorias'\\) ORDER BY TABLE_NAME;\" 2>&1)",
       "PowerShell(Get-Content \"D:\\\\laragon\\\\www\\\\Alex ayuda\\\\proyecto\\\\vidrios-inventory\\\\database\\\\migrate_remove_tipos_material.sql\" | & \"D:\\\\laragon\\\\bin\\\\mysql\\\\mysql-8.4.3-winx64\\\\bin\\\\mysql.exe\" -u root vidrios_inventory 2>&1)",
       "PowerShell(& \"D:\\\\laragon\\\\bin\\\\mysql\\\\mysql-8.4.3-winx64\\\\bin\\\\mysql.exe\" -u root vidrios_inventory -e \"DESCRIBE materiales; SHOW TABLES LIKE 'tipos_material';\" 2>&1)",
       "PowerShell(& \"D:\\\\laragon\\\\bin\\\\mysql\\\\mysql-8.4.3-winx64\\\\bin\\\\mysql.exe\" -u root vidrios_inventory -e \"DESCRIBE ordenes_produccion;\" 2>&1)",
       "PowerShell(& \"D:\\\\laragon\\\\bin\\\\mysql\\\\mysql-8.4.3-winx64\\\\bin\\\\mysql.exe\" -u root vidrios_inventory -e \"DESCRIBE ordenes_materiales; DESCRIBE ordenes_historial_estado;\" 2>&1)",
-      "PowerShell(& \"D:\\\\laragon\\\\bin\\\\mysql\\\\mysql-8.4.3-winx64\\\\bin\\\\mysql.exe\" -u root vidrios_inventory -e \"SHOW TABLES;\" 2>&1)"
+      "PowerShell(& \"D:\\\\laragon\\\\bin\\\\mysql\\\\mysql-8.4.3-winx64\\\\bin\\\\mysql.exe\" -u root vidrios_inventory -e \"SHOW TABLES;\" 2>&1)",
+      "Bash(grep -E \"\\\\.php$\")",
+      "Bash(awk '{print $9, \"\\(\" $5 \"\\)\"}')"
     ]
   }
 }

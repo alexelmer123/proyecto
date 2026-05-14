@@ -1,0 +1,276 @@
+==============================================================================
+VITRALIA — SISTEMA DE INVENTARIO DE VIDRIOS
+"Vidrios Centro Puno E.I.R.L."
+==============================================================================
+
+
+------------------------------------------------------------------------------
+PATRON DE ARQUITECTURA: MVC (Modelo - Vista - Controlador)
+------------------------------------------------------------------------------
+
+Este proyecto usa el patron MVC. Eso significa que el codigo esta dividido
+en tres partes con responsabilidades distintas:
+
+  MODELO (Model)
+    Es la parte que habla con la base de datos.
+    Guarda, busca, actualiza y elimina informacion.
+    Ejemplo: Producto.php sabe como guardar un producto en MySQL.
+
+  VISTA (View)
+    Es la parte que el usuario ve en pantalla: el HTML, los formularios,
+    las tablas con datos.
+    No hace calculos ni consultas. Solo muestra lo que le manda el Controlador.
+    Ejemplo: views/productos/index.php muestra la lista de productos.
+
+  CONTROLADOR (Controller)
+    Es el intermediario. Recibe lo que el usuario hace (abrir una pagina,
+    enviar un formulario), le pide los datos al Modelo, y se los pasa
+    a la Vista para que los muestre.
+    Ejemplo: ProductoController.php decide que pasa cuando entras a /producto/crear.
+
+  Por que NO es MVVM?
+    MVVM tendria una capa extra (ViewModel) que mantiene los datos
+    sincronizados automaticamente con la pantalla, como hace Angular o Vue.
+    Aqui los datos van en una sola direccion: Controlador → Vista.
+    No hay actualizacion automatica ni binding reactivo.
+
+
+------------------------------------------------------------------------------
+TECNOLOGIAS USADAS Y PARA QUE SIRVE CADA UNA
+------------------------------------------------------------------------------
+
+PHP 8  (backend)
+  El lenguaje con el que esta hecho el servidor.
+  Se encarga de procesar los formularios, consultar la base de datos
+  y generar el HTML que se manda al navegador.
+  No usa ningun framework externo (sin Laravel, sin Symfony).
+  Todo el codigo fue escrito a mano.
+
+MySQL 8  (base de datos)
+  Donde se guarda toda la informacion: productos, movimientos, usuarios, etc.
+  Se conecta al servidor a traves de PDO, que es una forma segura de
+  hacer consultas sin riesgo de inyeccion SQL.
+
+Apache  (servidor web)
+  El programa que recibe las peticiones del navegador y las entrega a PHP.
+  Se configura con un archivo llamado .htaccess que le dice como manejar
+  las URLs del sistema.
+  En desarrollo se usa Laragon, que incluye Apache preconfigurado.
+
+HTML5 + CSS3  (lo que se ve en pantalla)
+  Las paginas estan hechas con HTML comun y estilos propios en
+  public/css/custom.css. No se usa Bootstrap ni ningun framework visual.
+
+JavaScript vanilla  (interactividad del navegador)
+  Pequenos scripts en public/js/app.js para cosas como menus desplegables
+  o selectores en cascada (elegir departamento segun el pais, etc.).
+  No se usa React, Vue ni ningun framework JS.
+
+Sesiones PHP  (para recordar quien esta conectado)
+  Cuando un usuario inicia sesion, PHP guarda sus datos en una sesion
+  del servidor. Asi el sistema sabe en cada pagina quien esta navegando
+  y si tiene permisos de admin u operador.
+
+
+------------------------------------------------------------------------------
+ESTRUCTURA DE CARPETAS (que hace cada una)
+------------------------------------------------------------------------------
+
+vidrios-inventory/
+|
++-- .htaccess
+|     Le dice a Apache como manejar las URLs.
+|     Bloquea el acceso directo a carpetas sensibles (app, core, config, database)
+|     y redirige todas las peticiones al punto de entrada del sistema.
+|
++-- config/
+|   +-- config.php      Ajustes generales: nombre de la app, URL base,
+|   |                   modo debug, carpeta de imagenes, stock minimo global.
+|   +-- database.php    Usuario, contrasena y nombre de la base de datos.
+|
++-- core/               El "motor" del sistema, hecho a mano.
+|   +-- Database.php    Abre la conexion con MySQL (una sola vez).
+|   +-- Model.php       Base que usan todos los modelos para hacer consultas.
+|   +-- Controller.php  Base que usan todos los controladores: mostrar vistas,
+|   |                   redirigir, verificar si el usuario tiene permiso, etc.
+|   +-- Router.php      Lee la URL y decide que controlador y accion ejecutar.
+|   +-- Paginator.php   Divide listas largas en paginas (1, 2, 3...).
+|
++-- app/
+|   +-- controllers/    Un archivo por modulo. Reciben las peticiones del usuario
+|   |                   y coordinan que hacer.
+|   +-- models/         Un archivo por tabla. Contienen las consultas SQL de
+|   |                   cada entidad del negocio.
+|   +-- views/          Las paginas HTML. Organizadas por modulo en subcarpetas.
+|       +-- layouts/    Partes comunes que se repiten en todas las paginas:
+|                       header.php (cabecera), sidebar.php (menu lateral),
+|                       footer.php (pie de pagina).
+|
++-- database/
+|   +-- schema.sql      Crea las tablas principales y carga datos de ejemplo.
+|   +-- install.php     Crea el usuario administrador. Solo se ejecuta una vez
+|   |                   desde la terminal, no desde el navegador.
+|   +-- migrations/     Scripts adicionales para crear tablas que no estan
+|                       en schema.sql (roles, permisos, geografia, pedidos).
+|
++-- public/             La unica carpeta que el navegador puede ver directamente.
+    +-- index.php       Punto de entrada: todo pasa por aqui primero.
+    +-- css/custom.css  Estilos visuales del sistema.
+    +-- js/app.js       Scripts del navegador.
+    +-- img/            Logo, imagen de fondo y fotos de productos.
+
+
+------------------------------------------------------------------------------
+COMO FUNCIONA CADA VEZ QUE ABRES UNA PAGINA
+------------------------------------------------------------------------------
+
+Ejemplo: el usuario entra a  /producto/crear
+
+PASO 1 — El navegador pide la pagina
+  Escribes la URL. Apache la recibe y el .htaccess le dice:
+  "eso no es un archivo real, mandalo a public/index.php con url=producto/crear"
+
+PASO 2 — public/index.php arranca el sistema
+  Este archivo es el primero en ejecutarse siempre.
+  Inicia la sesion, carga la configuracion, carga el motor (core/)
+  y le pasa la URL al Router.
+
+PASO 3 — El Router decide a donde ir
+  Lee "producto/crear" y lo traduce:
+    "producto"  →  ProductoController
+    "crear"     →  metodo crear()
+  Crea el controlador y llama al metodo.
+
+PASO 4 — El controlador hace su trabajo
+  ProductoController::crear() verifica que el usuario sea admin.
+  Si la pagina se esta abriendo (GET): busca categorias y proveedores
+  en la base de datos y muestra el formulario.
+  Si el usuario envio el formulario (POST): guarda el producto,
+  registra la accion en auditoria y redirige con un mensaje de exito.
+
+PASO 5 — Se arma la pagina y se envia al navegador
+  El controlador llama a render() que une tres partes:
+    header.php  → la parte de arriba (barra de navegacion, estilos)
+    sidebar.php → el menu lateral con los links del sistema
+    la vista    → el contenido de la pagina (ej. el formulario de producto)
+    footer.php  → cierre del HTML y scripts JS
+  Todo eso junto es lo que ves en pantalla.
+
+
+------------------------------------------------------------------------------
+QUE PASA CUANDO SE INGRESA UN NUEVO DATO (ejemplo: entrada de mercaderia)
+------------------------------------------------------------------------------
+
+Situacion: el almacenero recibe 10 laminas de vidrio y las registra en el sistema.
+
+1. Llena el formulario en /movimiento/entrada y hace clic en Guardar.
+
+2. El formulario llega al servidor (POST).
+   MovimientoController verifica que el usuario este logueado
+   y que los datos sean validos (producto seleccionado, cantidad mayor a cero).
+
+3. Se llama a Movimiento::registrar() para guardar el cambio de stock.
+
+4. Dentro de registrar() pasan estas cosas en orden:
+   a. Se abre una transaccion en MySQL.
+      (Una transaccion es como decir "haz todo esto junto o no hagas nada")
+   b. Se bloquea la fila del producto en la base de datos.
+      (Esto evita que dos personas registren movimientos al mismo tiempo
+       y el stock quede mal calculado)
+   c. Se calcula el stock nuevo: stock actual + cantidad ingresada.
+   d. Se actualiza el stock del producto en la tabla productos.
+   e. Se guarda el movimiento en la tabla movimientos con todos los detalles:
+      que producto, cuanto habia antes, cuanto hay ahora, quien lo hizo, cuando.
+   f. Se confirma la transaccion (commit). Recien aqui los cambios son permanentes.
+
+5. Se registra en auditoria: quien hizo la entrada, a que hora, desde que IP.
+   Si esto falla, no importa, el movimiento ya fue guardado igual.
+
+6. Se guarda un mensaje de exito ("Entrada registrada correctamente")
+   y se redirige al historial de movimientos, donde aparece el nuevo registro.
+
+
+------------------------------------------------------------------------------
+MODULOS DEL SISTEMA (que hace cada seccion)
+------------------------------------------------------------------------------
+
+Login / Logout        Entrar y salir del sistema de forma segura.
+
+Dashboard             Pantalla de inicio con resumen: cuantos productos hay,
+                      cuales tienen stock bajo, los ultimos movimientos.
+
+Productos             Ver, agregar, editar y desactivar productos del catalogo.
+                      Incluye ajuste directo de stock y subida de foto.
+
+Categorias            Organizar los productos por tipo (vidrio templado,
+                      espejo, insumos, etc.).
+
+Proveedores           Directorio de empresas que abastecen al negocio.
+
+Movimientos           Registrar entradas (compras), salidas (ventas/uso)
+                      y ajustes de stock. Ver el historial completo por producto.
+
+Pedidos               Registrar pedidos de clientes con su estado:
+                      pendiente, pagado o con deuda.
+
+Reportes              Informes listos para consultar: productos con stock bajo,
+                      valor total del inventario, movimientos por fechas,
+                      ventas por periodo, resumen por proveedor.
+
+Roles y Permisos      Ver que puede hacer cada rol en el sistema
+                      (admin tiene acceso total, operador acceso limitado).
+
+Auditoria             Historial de todo lo que hicieron los usuarios:
+                      que cambiaron, cuando y desde donde. Solo lo ve el admin.
+
+Geografia             Herramienta interna que llena automaticamente los
+                      selectores de departamento, provincia, distrito y ciudad
+                      segun el pais elegido en un formulario.
+
+
+------------------------------------------------------------------------------
+TABLAS DE LA BASE DE DATOS (donde se guarda cada cosa)
+------------------------------------------------------------------------------
+
+Tablas principales (schema.sql):
+  usuarios       Cuentas de acceso al sistema (admin u operador)
+  categorias     Tipos de productos
+  proveedores    Empresas que venden al negocio
+  productos      Catalogo completo con precios, dimensiones y stock
+  movimientos    Registro de cada entrada, salida o ajuste de stock
+
+Tablas de roles y auditoria (migrations/001):
+  roles          Los roles disponibles: admin, operador
+  permisos       Acciones especificas que se pueden asignar a un rol
+  roles_permisos Que permisos tiene cada rol
+  auditoria      Log de acciones: quien hizo que y cuando
+
+Tablas de geografia y pedidos (migrations/002):
+  paises, departamentos, provincias, distritos, ciudades
+                 Geografia en cascada para los formularios
+  pedidos        Pedidos de clientes con estado de pago
+
+
+------------------------------------------------------------------------------
+NOTAS IMPORTANTES
+------------------------------------------------------------------------------
+
+- Nunca cambiar el stock de un producto directamente en la base de datos.
+  Siempre debe hacerse a traves del sistema (entradas, salidas o ajustes)
+  para que el historial quede correcto.
+
+- Hay dos tipos de usuario: admin y operador.
+  El admin puede hacer todo. El operador solo puede registrar movimientos
+  y consultar informacion, no puede modificar el catalogo.
+
+- Si el proyecto se mueve a otro servidor o cambia de ruta, hay que
+  actualizar dos archivos:
+    config/config.php  →  la linea BASE_URL
+    .htaccess          →  la linea RewriteBase
+
+- El usuario admin no se crea al cargar la base de datos.
+  Hay que ejecutar este comando una sola vez desde la terminal:
+    php database/install.php
+  Usuario: admin@vitralia.co  /  Contrasena: vidrio123
+
+==============================================================================
