@@ -3,9 +3,20 @@
 <html lang="es">
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
     <meta name="base-url" content="<?= htmlspecialchars(BASE_URL, ENT_QUOTES, 'UTF-8') ?>">
+    <meta name="theme-color" content="#0c1016" media="(prefers-color-scheme: dark)">
+    <meta name="theme-color" content="#f5f1e6" media="(prefers-color-scheme: light)">
+    <meta name="description" content="<?= htmlspecialchars(APP_TAGLINE, ENT_QUOTES, 'UTF-8') ?>">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Vitralia">
     <title><?= htmlspecialchars(($titulo ?? '') . ' · ' . APP_NAME, ENT_QUOTES, 'UTF-8') ?></title>
+
+    <link rel="manifest" href="<?= BASE_URL ?>/manifest.webmanifest">
+    <link rel="icon" type="image/png" href="<?= BASE_URL ?>/public/img/logo-removebg-preview.png">
+    <link rel="apple-touch-icon" href="<?= BASE_URL ?>/public/img/logo-removebg-preview.png">
 
     <script>
         (function () {
@@ -25,10 +36,15 @@
     <link rel="stylesheet" href="<?= BASE_URL ?>/public/css/custom.css?v=<?= $cssV ?>">
 </head>
 <body>
+<?php require __DIR__ . '/_icon_sprite.php'; ?>
 <div class="grain"></div>
 
 <header class="topbar">
     <div class="topbar__brand">
+        <button type="button" class="sidebar-toggle" id="sidebarToggle"
+                aria-label="Abrir menú" aria-expanded="false" aria-controls="appSidebar">
+            <?= icon('menu', 20) ?>
+        </button>
         <span class="topbar__mark" aria-hidden="true">
             <img src="<?= BASE_URL ?>/public/img/logo-removebg-preview.png"
                  alt="<?= htmlspecialchars(APP_NAME, ENT_QUOTES, 'UTF-8') ?>"
@@ -44,19 +60,16 @@
         <button type="button" class="theme-toggle" id="themeToggle"
                 aria-label="Cambiar tema" title="Cambiar tema (claro / oscuro)">
             <span class="theme-toggle__icon theme-toggle__icon--moon" aria-hidden="true">
-                <svg viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+                <?= icon('moon', 18) ?>
             </span>
             <span class="theme-toggle__icon theme-toggle__icon--sun" aria-hidden="true">
-                <svg viewBox="0 0 24 24">
-                    <circle cx="12" cy="12" r="4"/>
-                    <path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>
-                </svg>
+                <?= icon('sun', 18) ?>
             </span>
         </button>
         <?php if ($usuario): ?>
             <a href="<?= BASE_URL ?>/reporte/stockBajo" class="badge badge--alert" id="badgeStockBajo"
                title="Productos con stock crítico">
-                <span class="badge__dot"></span>
+                <?= icon('alert', 14) ?>
                 <span class="badge__label">Stock crítico</span>
                 <span class="badge__count" data-stock-bajo><?= (int) $stockBajoCount ?></span>
             </a>
@@ -67,7 +80,10 @@
                     <span class="user-pill__role"><?= htmlspecialchars((string) $usuario['rol'], ENT_QUOTES, 'UTF-8') ?></span>
                 </span>
             </div>
-            <a href="<?= BASE_URL ?>/auth/logout" class="btn btn--ghost">Salir</a>
+            <a href="<?= BASE_URL ?>/auth/logout" class="btn btn--ghost btn--sm" title="Cerrar sesión">
+                <?= icon('logout', 16) ?>
+                <span class="btn__label">Salir</span>
+            </a>
         <?php endif; ?>
     </div>
 </header>

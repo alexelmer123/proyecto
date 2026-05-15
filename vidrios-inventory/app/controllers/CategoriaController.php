@@ -59,8 +59,25 @@ final class CategoriaController extends Controller
                 ]);
                 $this->audit('crear', 'categoria', (string) $newId, "Categoría «{$form['nombre']}» creada.");
                 $this->setFlash('success', 'Categoría creada.');
+                if ($this->isAjax()) {
+                    http_response_code(200);
+                    echo 'ok';
+                    return;
+                }
                 $this->redirect('/categoria/index');
             }
+        }
+
+        if ($this->isAjax()) {
+            $action      = BASE_URL . '/categoria/crear';
+            $submitLabel = 'Crear categoría';
+            $this->render('categorias/_form', [
+                'form'        => $form,
+                'errores'     => $errores,
+                'action'      => $action,
+                'submitLabel' => $submitLabel,
+            ], withLayout: false);
+            return;
         }
 
         $this->render('categorias/crear', [
@@ -100,8 +117,25 @@ final class CategoriaController extends Controller
                 ]);
                 $this->audit('editar', 'categoria', (string) $id, "Categoría «{$form['nombre']}» editada.");
                 $this->setFlash('success', 'Categoría actualizada.');
+                if ($this->isAjax()) {
+                    http_response_code(200);
+                    echo 'ok';
+                    return;
+                }
                 $this->redirect('/categoria/index');
             }
+        }
+
+        if ($this->isAjax()) {
+            $action      = BASE_URL . '/categoria/editar/' . $id;
+            $submitLabel = 'Guardar cambios';
+            $this->render('categorias/_form', [
+                'form'        => $form,
+                'errores'     => $errores,
+                'action'      => $action,
+                'submitLabel' => $submitLabel,
+            ], withLayout: false);
+            return;
         }
 
         $this->render('categorias/editar', [

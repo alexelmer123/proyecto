@@ -34,16 +34,34 @@ final class ProveedorController extends Controller
                 $newId = $this->proveedores->create($form);
                 $this->audit('crear', 'proveedor', (string) $newId, "Proveedor «{$form['nombre']}» creado.");
                 $this->setFlash('success', 'Proveedor creado.');
+                if ($this->isAjax()) {
+                    http_response_code(200);
+                    echo 'ok';
+                    return;
+                }
                 $this->redirect('/proveedor/index');
             }
         }
 
-        $this->render('proveedores/crear', [
+        $viewData = [
             'form'    => $form,
             'errores' => $errores,
             'paises'  => (new Pais())->activos(),
-            'titulo'  => 'Nuevo proveedor',
-        ]);
+        ];
+
+        if ($this->isAjax()) {
+            $viewData['action']      = BASE_URL . '/proveedor/crear';
+            $viewData['submitLabel'] = 'Crear proveedor';
+            $viewData['departamentos'] = [];
+            $viewData['provincias']    = [];
+            $viewData['distritos']     = [];
+            $viewData['ciudades']      = [];
+            $this->render('proveedores/_form', $viewData, withLayout: false);
+            return;
+        }
+
+        $viewData['titulo'] = 'Nuevo proveedor';
+        $this->render('proveedores/crear', $viewData);
     }
 
     public function editar(string $id = '0'): void
@@ -66,6 +84,11 @@ final class ProveedorController extends Controller
                 $this->proveedores->update($id, $form);
                 $this->audit('editar', 'proveedor', (string) $id, "Proveedor «{$form['nombre']}» editado.");
                 $this->setFlash('success', 'Proveedor actualizado.');
+                if ($this->isAjax()) {
+                    http_response_code(200);
+                    echo 'ok';
+                    return;
+                }
                 $this->redirect('/proveedor/index');
             }
         }
@@ -77,7 +100,7 @@ final class ProveedorController extends Controller
         $distritos      = !empty($form['provincia_id'])    ? (new Distrito())->porProvincia((int) $form['provincia_id'])         : [];
         $ciudades       = !empty($form['distrito_id'])     ? (new Ciudad())->porDistrito((int) $form['distrito_id'])             : [];
 
-        $this->render('proveedores/editar', [
+        $viewData = [
             'form'           => $form,
             'errores'        => $errores,
             'paises'         => $paises,
@@ -85,8 +108,17 @@ final class ProveedorController extends Controller
             'provincias'     => $provincias,
             'distritos'      => $distritos,
             'ciudades'       => $ciudades,
-            'titulo'         => 'Editar proveedor',
-        ]);
+        ];
+
+        if ($this->isAjax()) {
+            $viewData['action']      = BASE_URL . '/proveedor/editar/' . $id;
+            $viewData['submitLabel'] = 'Guardar cambios';
+            $this->render('proveedores/_form', $viewData, withLayout: false);
+            return;
+        }
+
+        $viewData['titulo'] = 'Editar proveedor';
+        $this->render('proveedores/editar', $viewData);
     }
 
     public function eliminar(string $id = '0'): void

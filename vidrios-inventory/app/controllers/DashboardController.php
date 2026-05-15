@@ -58,6 +58,35 @@ final class DashboardController extends Controller
              WHERE created_at >= NOW() - INTERVAL 7 DAY
         ")->fetch() ?: ['entradas' => 0, 'salidas' => 0];
 
+        // ─── Flujo del mes actual y mes previo (KPI principal) ──────────────
+        $flujoMes = $db->query("
+            SELECT
+              COALESCE(SUM(CASE WHEN tipo = 'entrada' THEN cantidad END), 0) AS entradas,
+              COALESCE(SUM(CASE WHEN tipo = 'salida'  THEN cantidad END), 0) AS salidas
+              FROM movimientos
+             WHERE YEAR(created_at)  = YEAR(CURDATE())
+               AND MONTH(created_at) = MONTH(CURDATE())
+        ")->fetch() ?: ['entradas' => 0, 'salidas' => 0];
+
+        $flujoMesPrev = $db->query("
+            SELECT
+              COALESCE(SUM(CASE WHEN tipo = 'entrada' THEN cantidad END), 0) AS entradas,
+              COALESCE(SUM(CASE WHEN tipo = 'salida'  THEN cantidad END), 0) AS salidas
+              FROM movimientos
+             WHERE created_at >= DATE_SUB(DATE_FORMAT(CURDATE(), '%Y-%m-01'), INTERVAL 1 MONTH)
+               AND created_at <  DATE_FORMAT(CURDATE(), '%Y-%m-01')
+        ")->fetch() ?: ['entradas' => 0, 'salidas' => 0];
+
+        $entradasMes      = (int) $flujoMes['entradas'];
+        $salidasMes       = (int) $flujoMes['salidas'];
+        $netoMes          = $entradasMes - $salidasMes;
+        $entradasMesPrev  = (int) $flujoMesPrev['entradas'];
+        $salidasMesPrev   = (int) $flujoMesPrev['salidas'];
+        $netoMesPrev      = $entradasMesPrev - $salidasMesPrev;
+        $netoTrendPct     = $netoMesPrev !== 0
+            ? (($netoMes - $netoMesPrev) / abs($netoMesPrev)) * 100
+            : ($netoMes !== 0 ? 100.0 : 0.0);
+
         // ─── Serie diaria de movimientos (últimos 14 días) ──────────────────
         // Generamos primero el rango completo en PHP para mostrar días con cero.
         $movPorDia = $db->query("
@@ -147,6 +176,11 @@ final class DashboardController extends Controller
             'movTrendPct'        => $movTrendPct,
             'entradasSemana'     => (int) $flujoSemana['entradas'],
             'salidasSemana'      => (int) $flujoSemana['salidas'],
+            'entradasMes'        => $entradasMes,
+            'salidasMes'         => $salidasMes,
+            'netoMes'            => $netoMes,
+            'netoMesPrev'        => $netoMesPrev,
+            'netoTrendPct'       => $netoTrendPct,
             'serie14'            => $serie14,
             'valorPorCategoria'  => $valorPorCategoria,
             'topProductos'       => $topProductos,

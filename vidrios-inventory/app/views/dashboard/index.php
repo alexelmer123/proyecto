@@ -10,6 +10,11 @@
 /** @var float $movTrendPct */
 /** @var int   $entradasSemana */
 /** @var int   $salidasSemana */
+/** @var int   $entradasMes */
+/** @var int   $salidasMes */
+/** @var int   $netoMes */
+/** @var int   $netoMesPrev */
+/** @var float $netoTrendPct */
 /** @var array $serie14 */
 /** @var array $valorPorCategoria */
 /** @var array $topProductos */
@@ -115,11 +120,46 @@ $trendLabel  = ($movTrendPct === 0.0)
     </div>
 </header>
 
+<?php
+$mesActualNombre = $mesesEs[(int) date('n') - 1];
+$netoTrendUp     = $netoTrendPct > 0;
+$netoTrendIcon   = $netoTrendUp ? '▲' : ($netoTrendPct < 0 ? '▼' : '·');
+$netoTrendClass  = $netoTrendUp ? 'is-up' : ($netoTrendPct < 0 ? 'is-down' : 'is-flat');
+$netoTrendLabel  = ($netoTrendPct === 0.0)
+    ? 'Igual que ' . $mesesEs[((int) date('n') - 2 + 12) % 12]
+    : sprintf('%s%.0f%% vs. mes anterior', $netoTrendPct > 0 ? '+' : '', $netoTrendPct);
+?>
 <section class="metrics-grid">
-    <article class="metric metric--main">
-        <span class="metric__label">Valor del inventario</span>
-        <span class="metric__value mono"><?= $h($money($valorInventario)) ?></span>
-        <span class="metric__sub">Suma de stock × precio de compra</span>
+    <article class="metric metric--main metric--flow">
+        <header class="metric__head">
+            <span class="metric__label">Flujo de <?= $h($mesActualNombre) ?></span>
+            <span class="trend trend--<?= $h($netoTrendClass) ?>">
+                <?= $h($netoTrendIcon) ?> <?= $h($netoTrendLabel) ?>
+            </span>
+        </header>
+        <div class="flow-pair">
+            <div class="flow-leg flow-leg--in">
+                <span class="flow-leg__icon" aria-hidden="true">↓</span>
+                <div>
+                    <span class="flow-leg__value mono">+<?= number_format($entradasMes, 0, ',', '.') ?></span>
+                    <span class="flow-leg__label">Entradas</span>
+                </div>
+            </div>
+            <div class="flow-divider" aria-hidden="true"></div>
+            <div class="flow-leg flow-leg--out">
+                <span class="flow-leg__icon" aria-hidden="true">↑</span>
+                <div>
+                    <span class="flow-leg__value mono">−<?= number_format($salidasMes, 0, ',', '.') ?></span>
+                    <span class="flow-leg__label">Salidas</span>
+                </div>
+            </div>
+        </div>
+        <footer class="metric__foot">
+            <span class="metric__sub">Saldo neto del mes</span>
+            <span class="metric__net mono <?= $netoMes >= 0 ? 'is-up' : 'is-down' ?>">
+                <?= $netoMes >= 0 ? '+' : '' ?><?= number_format($netoMes, 0, ',', '.') ?> uds
+            </span>
+        </footer>
     </article>
 
     <article class="metric">

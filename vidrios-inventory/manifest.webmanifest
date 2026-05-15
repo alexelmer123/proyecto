@@ -1,0 +1,47 @@
+{
+    "name": "Vitralia · Inventario de Cristal",
+    "short_name": "Vitralia",
+    "description": "ERP de inventario para vidriería. Catálogo, movimientos y reportes.",
+    "start_url": ".",
+    "scope": ".",
+    "display": "standalone",
+    "orientation": "any",
+    "background_color": "#0c1016",
+    "theme_color": "#0c1016",
+    "lang": "es",
+    "dir": "ltr",
+    "categories": ["business", "productivity"],
+    "icons": [
+        {
+            "src": "public/img/logo-removebg-preview.png",
+            "sizes": "192x192 256x256 384x384 512x512",
+            "type": "image/png",
+            "purpose": "any"
+        },
+        {
+            "src": "public/img/logo-removebg-preview.png",
+            "sizes": "192x192 256x256 384x384 512x512",
+            "type": "image/png",
+            "purpose": "maskable"
+        }
+    ],
+    "shortcuts": [
+        {
+            "name": "Tablero",
+            "short_name": "Dashboard",
+            "url": "dashboard/index"
+        },
+        {
+            "name": "Catálogo",
+            "url": "producto/index"
+        },
+        {
+            "name": "Registrar entrada",
+            "url": "movimiento/registrarEntrada"
+        },
+        {
+            "name": "Registrar salida",
+            "url": "movimiento/registrarSalida"
+        }
+    ]
+}

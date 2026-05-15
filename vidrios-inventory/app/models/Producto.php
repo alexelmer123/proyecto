@@ -72,6 +72,24 @@ final class Producto extends BaseModel
         return $row !== false ? $row : null;
     }
 
+    /**
+     * Trae un producto con los nombres de su categoría y proveedor (para vistas de detalle).
+     */
+    public function findConRelaciones(int $id): ?array
+    {
+        $stmt = $this->db->prepare(
+            "SELECT p.*, c.nombre AS categoria_nombre, pr.nombre AS proveedor_nombre
+             FROM `{$this->table}` p
+             LEFT JOIN categorias  c  ON c.id  = p.categoria_id
+             LEFT JOIN proveedores pr ON pr.id = p.proveedor_id
+             WHERE p.id = :id
+             LIMIT 1"
+        );
+        $stmt->execute([':id' => $id]);
+        $row = $stmt->fetch();
+        return $row !== false ? $row : null;
+    }
+
     public function generarCodigoUnico(string $prefijo = 'VID'): string
     {
         do {

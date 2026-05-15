@@ -94,6 +94,12 @@ abstract class Controller
         return isset($_SESSION['usuario']['id']) ? (int) $_SESSION['usuario']['id'] : null;
     }
 
+    protected function isAjax(): bool
+    {
+        $xrw = $_SERVER['HTTP_X_REQUESTED_WITH'] ?? '';
+        return strtolower((string) $xrw) === 'fetch' || strtolower((string) $xrw) === 'xmlhttprequest';
+    }
+
     protected function contarStockBajo(): int
     {
         if (!$this->isLoggedIn()) {

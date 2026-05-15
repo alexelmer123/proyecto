@@ -9,8 +9,19 @@ $h = static fn(?string $s): string => htmlspecialchars((string) $s, ENT_QUOTES, 
         <p class="page-head__caption">Familias y sub-tipos de cristal.</p>
     </div>
     <div class="page-head__actions">
-        <a href="<?= BASE_URL ?>/categoria/exportar" class="btn btn--ghost">↓ Exportar CSV</a>
-        <a href="<?= BASE_URL ?>/categoria/crear" class="btn btn--primary">+ Nueva categoría</a>
+        <a href="<?= BASE_URL ?>/categoria/exportar" class="btn btn--ghost">
+            <?= icon('download', 16) ?>
+            <span>Exportar CSV</span>
+        </a>
+        <button type="button"
+                class="btn btn--primary"
+                data-modal-src="<?= BASE_URL ?>/categoria/crear"
+                data-modal-title="Nueva categoría"
+                data-modal-kicker="Clasificación"
+                data-modal-caption="Define una nueva familia para agrupar productos.">
+            <?= icon('plus', 16) ?>
+            <span>Nueva categoría</span>
+        </button>
     </div>
 </header>
 
@@ -27,9 +38,19 @@ $h = static fn(?string $s): string => htmlspecialchars((string) $s, ENT_QUOTES, 
             </header>
             <p class="card__desc"><?= $h($c['descripcion'] ?: 'Sin descripción.') ?></p>
             <footer class="card__foot">
-                <a class="btn btn--ghost btn--sm" href="<?= BASE_URL ?>/categoria/editar/<?= (int) $c['id'] ?>">Editar</a>
+                <button type="button"
+                        class="btn btn--ghost btn--sm"
+                        data-modal-src="<?= BASE_URL ?>/categoria/editar/<?= (int) $c['id'] ?>"
+                        data-modal-title="Editar <?= $h($c['nombre']) ?>"
+                        data-modal-kicker="Clasificación · Edición">
+                    <?= icon('edit', 14) ?>
+                    <span>Editar</span>
+                </button>
                 <a class="btn btn--danger btn--sm" href="<?= BASE_URL ?>/categoria/eliminar/<?= (int) $c['id'] ?>"
-                   data-confirm="¿Desactivar la categoría «<?= $h($c['nombre']) ?>»?">Archivar</a>
+                   data-confirm="¿Desactivar la categoría «<?= $h($c['nombre']) ?>»?">
+                    <?= icon('archive', 14) ?>
+                    <span>Archivar</span>
+                </a>
             </footer>
         </article>
     <?php endforeach; ?>

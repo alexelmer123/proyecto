@@ -68,17 +68,32 @@ final class ProductoController extends Controller
                 $newId = $this->productos->create($form);
                 $this->audit('crear', 'producto', (string) $newId, "Producto «{$form['nombre']}» creado.");
                 $this->setFlash('success', "Producto «{$form['nombre']}» creado correctamente.");
+                if ($this->isAjax()) {
+                    http_response_code(200);
+                    echo 'ok';
+                    return;
+                }
                 $this->redirect('/producto/index');
             }
         }
 
-        $this->render('productos/crear', [
+        $viewData = [
             'form'         => $form,
             'errores'      => $errores,
             'categorias'   => $this->categorias->activas(),
             'proveedores'  => $this->proveedores->activos(),
-            'titulo'       => 'Nuevo producto',
-        ]);
+        ];
+
+        if ($this->isAjax()) {
+            $viewData['action']      = BASE_URL . '/producto/crear';
+            $viewData['submitLabel'] = 'Crear producto';
+            $viewData['esEdicion']   = false;
+            $this->render('productos/_form', $viewData, withLayout: false);
+            return;
+        }
+
+        $viewData['titulo'] = 'Nuevo producto';
+        $this->render('productos/crear', $viewData);
     }
 
     public function editar(string $id = '0'): void
@@ -111,25 +126,71 @@ final class ProductoController extends Controller
             if ($errores === []) {
                 $datos = $form;
                 unset($datos['id'], $datos['stock_actual']); // stock no se modifica desde aquí
+                $quitarImagen = ($_POST['quitar_imagen'] ?? '0') === '1';
                 if (is_string($imagen)) {
                     $datos['imagen'] = $imagen;
+                } elseif ($quitarImagen) {
+                    $datos['imagen'] = null;
                 } else {
                     unset($datos['imagen']);
                 }
                 $this->productos->update($id, $datos);
                 $this->audit('editar', 'producto', (string) $id, "Producto «{$form['nombre']}» editado.");
                 $this->setFlash('success', 'Producto actualizado.');
+                if ($this->isAjax()) {
+                    http_response_code(200);
+                    echo 'ok';
+                    return;
+                }
                 $this->redirect('/producto/index');
             }
         }
 
-        $this->render('productos/editar', [
+        $viewData = [
             'form'         => $form,
             'errores'      => $errores,
             'categorias'   => $this->categorias->activas(),
             'proveedores'  => $this->proveedores->activos(),
-            'titulo'       => 'Editar producto',
-        ]);
+        ];
+
+        if ($this->isAjax()) {
+            $viewData['action']      = BASE_URL . '/producto/editar/' . $id;
+            $viewData['submitLabel'] = 'Guardar cambios';
+            $viewData['esEdicion']   = true;
+            $this->render('productos/_form', $viewData, withLayout: false);
+            return;
+        }
+
+        $viewData['titulo'] = 'Editar producto';
+        $this->render('productos/editar', $viewData);
+    }
+
+    /**
+     * Vista read-only del producto. Pensada para abrirse dentro de un modal
+     * (catálogo → click en la imagen de la tarjeta). Renderiza sin layout
+     * cuando es una petición fetch (modal); con layout si se accede directo.
+     */
+    public function detalle(string $id = '0'): void
+    {
+        $this->requireAuth();
+        $id = (int) $id;
+        $producto = $this->productos->findConRelaciones($id);
+        if ($producto === null) {
+            if ($this->isAjax()) {
+                http_response_code(404);
+                echo '<p class="modal__error">Producto no encontrado.</p>';
+                return;
+            }
+            $this->setFlash('error', 'Producto no encontrado.');
+            $this->redirect('/producto/index');
+        }
+
+        $viewData = ['producto' => $producto, 'titulo' => $producto['nombre']];
+        if ($this->isAjax()) {
+            $this->render('productos/detalle', $viewData, withLayout: false);
+            return;
+        }
+        $this->render('productos/detalle', $viewData);
     }
 
     public function eliminar(string $id = '0'): void

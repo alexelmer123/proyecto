@@ -14,6 +14,7 @@ require ROOT . '/core/Controller.php';
 require ROOT . '/core/Router.php';
 require ROOT . '/core/Paginator.php';
 require ROOT . '/core/Exporter.php';
+require ROOT . '/core/Icons.php';
 
 spl_autoload_register(function (string $class): void {
     foreach (['app/controllers', 'app/models'] as $dir) {

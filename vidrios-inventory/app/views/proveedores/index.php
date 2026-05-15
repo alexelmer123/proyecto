@@ -9,8 +9,20 @@ $h = static fn(?string $s): string => htmlspecialchars((string) $s, ENT_QUOTES, 
         <p class="page-head__caption"><?= count($proveedores) ?> contactos registrados.</p>
     </div>
     <div class="page-head__actions">
-        <a href="<?= BASE_URL ?>/proveedor/exportar" class="btn btn--ghost">↓ Exportar CSV</a>
-        <a href="<?= BASE_URL ?>/proveedor/crear" class="btn btn--primary">+ Nuevo proveedor</a>
+        <a href="<?= BASE_URL ?>/proveedor/exportar" class="btn btn--ghost">
+            <?= icon('download', 16) ?>
+            <span>Exportar CSV</span>
+        </a>
+        <button type="button"
+                class="btn btn--primary"
+                data-modal-src="<?= BASE_URL ?>/proveedor/crear"
+                data-modal-title="Nuevo proveedor"
+                data-modal-kicker="Suministro"
+                data-modal-caption="Registra un nuevo contacto de cristal o materiales."
+                data-modal-size="lg">
+            <?= icon('plus', 16) ?>
+            <span>Nuevo proveedor</span>
+        </button>
     </div>
 </header>
 
@@ -57,10 +69,20 @@ $h = static fn(?string $s): string => htmlspecialchars((string) $s, ENT_QUOTES, 
                     </span>
                 </td>
                 <td class="table__td table__td--actions">
-                    <a class="iconbtn" href="<?= BASE_URL ?>/proveedor/editar/<?= (int) $p['id'] ?>" title="Editar">✎</a>
+                    <button type="button"
+                            class="iconbtn"
+                            title="Editar"
+                            data-modal-src="<?= BASE_URL ?>/proveedor/editar/<?= (int) $p['id'] ?>"
+                            data-modal-title="Editar <?= $h($p['nombre']) ?>"
+                            data-modal-kicker="Suministro · Edición"
+                            data-modal-size="lg">
+                        <?= icon('edit', 16) ?>
+                    </button>
                     <a class="iconbtn iconbtn--danger" href="<?= BASE_URL ?>/proveedor/eliminar/<?= (int) $p['id'] ?>"
                        data-confirm="¿Archivar al proveedor «<?= $h($p['nombre']) ?>»?"
-                       title="Archivar">×</a>
+                       title="Archivar">
+                        <?= icon('archive', 16) ?>
+                    </a>
                 </td>
             </tr>
         <?php endforeach; ?>
