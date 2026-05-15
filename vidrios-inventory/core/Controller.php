@@ -63,6 +63,33 @@ abstract class Controller
             $_SESSION['flash'] = ['type' => 'warn', 'msg' => 'Inicia sesión para continuar.'];
             $this->redirect('/auth/login');
         }
+        // Valida que el usuario en sesión todavía exista en la BD; si fue
+        // eliminado o la BD se reinstaló, descartamos la sesión y forzamos login.
+        if (!$this->usuarioVigenteEnBd((int) $_SESSION['usuario']['id'])) {
+            $_SESSION = [];
+            if (session_status() === PHP_SESSION_ACTIVE) {
+                @session_regenerate_id(true);
+            }
+            $_SESSION['flash'] = [
+                'type' => 'warn',
+                'msg'  => 'Tu sesión ya no es válida. Vuelve a iniciar sesión.',
+            ];
+            $this->redirect('/auth/login');
+        }
+    }
+
+    private function usuarioVigenteEnBd(int $id): bool
+    {
+        if ($id <= 0) return false;
+        try {
+            $db   = Database::getInstance();
+            $stmt = $db->prepare("SELECT 1 FROM usuarios WHERE id = :id AND activo = 1 LIMIT 1");
+            $stmt->execute([':id' => $id]);
+            return (bool) $stmt->fetchColumn();
+        } catch (Throwable) {
+            // Si la tabla no existe o la BD está down, no bloqueamos por aquí.
+            return true;
+        }
     }
 
     protected function requireAdmin(): void

@@ -38,45 +38,53 @@ $groupOpen = static function (array $needles) use ($activo): bool {
             </a>
         </details>
 
-        <details class="sidebar__group"<?= $groupOpen(['/pedido']) ? ' open' : '' ?>>
+        <details class="sidebar__group"<?= $groupOpen(['/pedido', '/movimiento/registrarentrada']) ? ' open' : '' ?>>
             <summary class="sidebar__section sidebar__section--toggle">
-                <span class="sidebar__section-label">Compras</span>
+                <span class="sidebar__section-label">Entradas</span>
                 <span class="sidebar__caret" aria-hidden="true"><?= icon('chevron-down', 14) ?></span>
             </summary>
             <a class="sidebar__link<?= $is('/pedido') ?>" href="<?= BASE_URL ?>/pedido/index">
                 <span class="sidebar__icon" aria-hidden="true"><?= icon('cart', 18) ?></span>
                 <span class="sidebar__label">Pedidos</span>
             </a>
-            <a class="sidebar__link" href="<?= BASE_URL ?>/pedido/index?estado=deuda">
-                <span class="sidebar__icon sidebar__icon--alert" aria-hidden="true"><?= icon('alert', 18) ?></span>
-                <span class="sidebar__label">Deudas</span>
-            </a>
-        </details>
-
-        <details class="sidebar__group"<?= $groupOpen(['/movimiento']) ? ' open' : '' ?>>
-            <summary class="sidebar__section sidebar__section--toggle">
-                <span class="sidebar__section-label">Movimientos</span>
-                <span class="sidebar__caret" aria-hidden="true"><?= icon('chevron-down', 14) ?></span>
-            </summary>
             <a class="sidebar__link<?= $is('/movimiento/registrarentrada') ?>" href="<?= BASE_URL ?>/movimiento/registrarEntrada">
                 <span class="sidebar__icon sidebar__icon--in" aria-hidden="true"><?= icon('arrow-down', 18) ?></span>
-                <span class="sidebar__label">Entrada</span>
-            </a>
-            <a class="sidebar__link<?= $is('/movimiento/registrarsalida') ?>" href="<?= BASE_URL ?>/movimiento/registrarSalida">
-                <span class="sidebar__icon sidebar__icon--out" aria-hidden="true"><?= icon('arrow-up', 18) ?></span>
-                <span class="sidebar__label">Salida</span>
-            </a>
-            <a class="sidebar__link<?= $is('/movimiento/historial') ?>" href="<?= BASE_URL ?>/movimiento/historial">
-                <span class="sidebar__icon" aria-hidden="true"><?= icon('clock', 18) ?></span>
-                <span class="sidebar__label">Historial</span>
+                <span class="sidebar__label">Registrar entrada</span>
             </a>
         </details>
 
-        <details class="sidebar__group"<?= $groupOpen(['/reporte']) ? ' open' : '' ?>>
+        <details class="sidebar__group"<?= $groupOpen(['/movimiento/registrarventa', '/encargo', '/movimiento/registraraccidente', '/movimiento/registrarmerma']) ? ' open' : '' ?>>
+            <summary class="sidebar__section sidebar__section--toggle">
+                <span class="sidebar__section-label">Salidas</span>
+                <span class="sidebar__caret" aria-hidden="true"><?= icon('chevron-down', 14) ?></span>
+            </summary>
+            <a class="sidebar__link<?= $is('/movimiento/registrarventa') ?>" href="<?= BASE_URL ?>/movimiento/registrarVenta">
+                <span class="sidebar__icon" aria-hidden="true"><?= icon('tag', 18) ?></span>
+                <span class="sidebar__label">Ventas</span>
+            </a>
+            <a class="sidebar__link<?= $is('/encargo') ?>" href="<?= BASE_URL ?>/encargo/index">
+                <span class="sidebar__icon" aria-hidden="true"><?= icon('clock', 18) ?></span>
+                <span class="sidebar__label">Encargos</span>
+            </a>
+            <a class="sidebar__link<?= $is('/movimiento/registraraccidente') ?>" href="<?= BASE_URL ?>/movimiento/registrarAccidente">
+                <span class="sidebar__icon sidebar__icon--alert" aria-hidden="true"><?= icon('alert', 18) ?></span>
+                <span class="sidebar__label">Accidentes</span>
+            </a>
+            <a class="sidebar__link<?= $is('/movimiento/registrarmerma') ?>" href="<?= BASE_URL ?>/movimiento/registrarMerma">
+                <span class="sidebar__icon sidebar__icon--out" aria-hidden="true"><?= icon('archive', 18) ?></span>
+                <span class="sidebar__label">Mermas</span>
+            </a>
+        </details>
+
+        <details class="sidebar__group"<?= $groupOpen(['/reporte', '/movimiento/historial']) ? ' open' : '' ?>>
             <summary class="sidebar__section sidebar__section--toggle">
                 <span class="sidebar__section-label">Reportes</span>
                 <span class="sidebar__caret" aria-hidden="true"><?= icon('chevron-down', 14) ?></span>
             </summary>
+            <a class="sidebar__link<?= $is('/movimiento/historial') ?>" href="<?= BASE_URL ?>/movimiento/historial">
+                <span class="sidebar__icon" aria-hidden="true"><?= icon('clock', 18) ?></span>
+                <span class="sidebar__label">Historial</span>
+            </a>
             <a class="sidebar__link<?= $is('/reporte/stockbajo') ?>" href="<?= BASE_URL ?>/reporte/stockBajo">
                 <span class="sidebar__icon sidebar__icon--alert" aria-hidden="true"><?= icon('alert', 18) ?></span>
                 <span class="sidebar__label">Stock crítico</span>

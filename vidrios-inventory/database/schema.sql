@@ -95,15 +95,23 @@ CREATE TABLE IF NOT EXISTS `movimientos` (
     `id`             BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     `producto_id`    INT UNSIGNED    NOT NULL,
     `tipo`           ENUM('entrada','salida','ajuste') NOT NULL,
+    `motivo`         VARCHAR(20)     NULL,   -- venta|encargo|accidente|merma (sólo para salidas)
     `cantidad`       INT             NOT NULL,
     `stock_anterior` INT             NOT NULL,
     `stock_nuevo`    INT             NOT NULL,
     `usuario_id`     INT UNSIGNED    NULL,
     `proveedor_id`   INT UNSIGNED    NULL,
+    `encargo_id`     INT UNSIGNED    NULL,   -- referencia al encargo si motivo='encargo'
+    `cliente`        VARCHAR(160)    NULL,   -- ventas/encargos
+    `total`          DECIMAL(12,2)   NULL,   -- ventas
+    `fecha_entrega`  DATE            NULL,   -- encargos
+    `evidencia`      TEXT            NULL,   -- accidentes/mermas (descripción detallada)
     `observacion`    VARCHAR(500)    NULL,
     `created_at`     DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
     INDEX `idx_movs_producto` (`producto_id`),
     INDEX `idx_movs_tipo`     (`tipo`),
+    INDEX `idx_movs_motivo`   (`motivo`),
+    INDEX `idx_movs_encargo`  (`encargo_id`),
     INDEX `idx_movs_created`  (`created_at`),
     CONSTRAINT `fk_movs_producto`  FOREIGN KEY (`producto_id`)
         REFERENCES `productos`(`id`)   ON DELETE CASCADE  ON UPDATE CASCADE,
@@ -112,6 +120,25 @@ CREATE TABLE IF NOT EXISTS `movimientos` (
     CONSTRAINT `fk_movs_proveedor` FOREIGN KEY (`proveedor_id`)
         REFERENCES `proveedores`(`id`) ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB;
+
+-- ----------------------------------------------------------------------------
+-- Migración idempotente: agregar las columnas nuevas (motivo, cliente, total,
+-- fecha_entrega, evidencia) a BDs ya creadas con el schema anterior.
+-- ----------------------------------------------------------------------------
+SET @col_motivo = (SELECT COUNT(*) FROM information_schema.COLUMNS
+                   WHERE TABLE_SCHEMA = 'vidrios_inventory'
+                     AND TABLE_NAME = 'movimientos'
+                     AND COLUMN_NAME = 'motivo');
+SET @sql = IF(@col_motivo = 0,
+    'ALTER TABLE `movimientos`
+        ADD COLUMN `motivo`        VARCHAR(20)   NULL AFTER `tipo`,
+        ADD COLUMN `cliente`       VARCHAR(160)  NULL AFTER `proveedor_id`,
+        ADD COLUMN `total`         DECIMAL(12,2) NULL AFTER `cliente`,
+        ADD COLUMN `fecha_entrega` DATE          NULL AFTER `total`,
+        ADD COLUMN `evidencia`     TEXT          NULL AFTER `fecha_entrega`,
+        ADD INDEX  `idx_movs_motivo` (`motivo`)',
+    'SELECT 1');
+PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
 
 -- ============================================================================
 -- ROLES Y PERMISOS (RBAC)
@@ -186,6 +213,64 @@ UPDATE `usuarios` u
    JOIN `roles` r ON r.nombre = u.rol
    SET u.rol_id = r.id
  WHERE u.rol_id IS NULL;
+
+-- ============================================================================
+-- ENCARGOS (clientes que reservan productos para entrega futura)
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS `encargos` (
+    `id`             INT UNSIGNED   AUTO_INCREMENT PRIMARY KEY,
+    `codigo`         VARCHAR(20)    NOT NULL UNIQUE,
+    `cliente`        VARCHAR(160)   NOT NULL,
+    `telefono`       VARCHAR(40)    NULL,
+    `lugar_entrega`  VARCHAR(255)   NULL,
+    `fecha_entrega`  DATE           NULL,
+    `detalles`       TEXT           NULL,
+    `estado`         ENUM('pendiente','entregado','cancelado') NOT NULL DEFAULT 'pendiente',
+    `usuario_id`     INT UNSIGNED   NULL,
+    `created_at`     DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX `idx_encargos_estado` (`estado`),
+    INDEX `idx_encargos_fecha`  (`fecha_entrega`),
+    CONSTRAINT `fk_encargos_usuario` FOREIGN KEY (`usuario_id`)
+        REFERENCES `usuarios`(`id`) ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS `encargo_items` (
+    `id`              INT UNSIGNED  AUTO_INCREMENT PRIMARY KEY,
+    `encargo_id`      INT UNSIGNED  NOT NULL,
+    `producto_id`     INT UNSIGNED  NOT NULL,
+    `cantidad`        INT           NOT NULL,
+    `precio_unitario` DECIMAL(12,2) NULL,
+    INDEX `idx_ei_encargo`  (`encargo_id`),
+    INDEX `idx_ei_producto` (`producto_id`),
+    CONSTRAINT `fk_ei_encargo`  FOREIGN KEY (`encargo_id`)
+        REFERENCES `encargos`(`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT `fk_ei_producto` FOREIGN KEY (`producto_id`)
+        REFERENCES `productos`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB;
+
+-- Migración idempotente: agregar la FK encargo_id en movimientos si no existe.
+SET @col_encargo = (SELECT COUNT(*) FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = 'vidrios_inventory'
+                      AND TABLE_NAME = 'movimientos'
+                      AND COLUMN_NAME = 'encargo_id');
+SET @sql = IF(@col_encargo = 0,
+    'ALTER TABLE `movimientos`
+        ADD COLUMN `encargo_id` INT UNSIGNED NULL AFTER `proveedor_id`,
+        ADD INDEX `idx_movs_encargo` (`encargo_id`)',
+    'SELECT 1');
+PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
+
+SET @fk_enc = (SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS
+               WHERE CONSTRAINT_SCHEMA = 'vidrios_inventory'
+                 AND TABLE_NAME = 'movimientos'
+                 AND CONSTRAINT_NAME = 'fk_movs_encargo');
+SET @sql = IF(@fk_enc = 0,
+    'ALTER TABLE `movimientos`
+        ADD CONSTRAINT `fk_movs_encargo` FOREIGN KEY (`encargo_id`)
+        REFERENCES `encargos`(`id`) ON DELETE SET NULL ON UPDATE CASCADE',
+    'SELECT 1');
+PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
 
 -- ============================================================================
 -- AUDITORIA

@@ -9,6 +9,17 @@ final class Movimiento extends BaseModel
     public const TIPO_SALIDA  = 'salida';
     public const TIPO_AJUSTE  = 'ajuste';
 
+    public const MOTIVO_VENTA     = 'venta';
+    public const MOTIVO_ENCARGO   = 'encargo';
+    public const MOTIVO_ACCIDENTE = 'accidente';
+    public const MOTIVO_MERMA     = 'merma';
+
+    /** Motivos válidos para salidas. */
+    public const MOTIVOS_SALIDA = [
+        self::MOTIVO_VENTA, self::MOTIVO_ENCARGO,
+        self::MOTIVO_ACCIDENTE, self::MOTIVO_MERMA,
+    ];
+
     /**
      * Registra un movimiento dentro de una transacción y actualiza el stock del producto.
      * Devuelve el id del movimiento creado.
@@ -21,7 +32,13 @@ final class Movimiento extends BaseModel
         int $cantidad,
         int $usuarioId,
         ?string $observacion = null,
-        ?int $proveedorId = null
+        ?int $proveedorId = null,
+        ?string $motivo = null,
+        ?string $cliente = null,
+        ?float $total = null,
+        ?string $fechaEntrega = null,
+        ?string $evidencia = null,
+        ?int $encargoId = null
     ): int {
         if ($cantidad <= 0) {
             throw new RuntimeException('La cantidad debe ser mayor a cero.');
@@ -29,8 +46,16 @@ final class Movimiento extends BaseModel
         if (!in_array($tipo, [self::TIPO_ENTRADA, self::TIPO_SALIDA, self::TIPO_AJUSTE], true)) {
             throw new RuntimeException('Tipo de movimiento inválido.');
         }
+        if ($motivo !== null && !in_array($motivo, self::MOTIVOS_SALIDA, true)) {
+            throw new RuntimeException('Motivo de salida inválido.');
+        }
 
-        $this->db->beginTransaction();
+        // Si el caller ya inició una transacción (ej. creación de un encargo con
+        // N items), no abrimos otra: dejamos commit/rollback al caller.
+        $owns = !$this->db->inTransaction();
+        if ($owns) {
+            $this->db->beginTransaction();
+        }
         try {
             // Bloqueo de fila para evitar carreras
             $stmt = $this->db->prepare(
@@ -65,26 +90,40 @@ final class Movimiento extends BaseModel
             // Registrar movimiento
             $ins = $this->db->prepare(
                 "INSERT INTO `{$this->table}`
-                    (producto_id, tipo, cantidad, stock_anterior, stock_nuevo,
-                     usuario_id, proveedor_id, observacion, created_at)
-                 VALUES (:p, :t, :c, :sa, :sn, :u, :pr, :o, NOW())"
+                    (producto_id, tipo, motivo, cantidad, stock_anterior, stock_nuevo,
+                     usuario_id, proveedor_id, encargo_id,
+                     cliente, total, fecha_entrega, evidencia,
+                     observacion, created_at)
+                 VALUES (:p, :t, :m, :c, :sa, :sn, :u, :pr, :en,
+                         :cl, :to, :fe, :ev, :o, NOW())"
             );
-            $ins->execute([
-                ':p'  => $productoId,
-                ':t'  => $tipo,
-                ':c'  => $cantidad,
-                ':sa' => $stockAnterior,
-                ':sn' => $stockNuevo,
-                ':u'  => $usuarioId,
-                ':pr' => $proveedorId,
-                ':o'  => $observacion,
-            ]);
+            // Si el id del usuario no existe en la tabla `usuarios` o es <=0,
+            // persistimos NULL (la FK es ON DELETE SET NULL).
+            $usuarioIdFk = $this->resolverUsuarioId($usuarioId);
+
+            $ins->bindValue(':p',  $productoId,  PDO::PARAM_INT);
+            $ins->bindValue(':t',  $tipo);
+            $ins->bindValue(':m',  $motivo);
+            $ins->bindValue(':c',  $cantidad,    PDO::PARAM_INT);
+            $ins->bindValue(':sa', $stockAnterior, PDO::PARAM_INT);
+            $ins->bindValue(':sn', $stockNuevo,    PDO::PARAM_INT);
+            $ins->bindValue(':u',  $usuarioIdFk, $usuarioIdFk === null ? PDO::PARAM_NULL : PDO::PARAM_INT);
+            $ins->bindValue(':pr', $proveedorId, $proveedorId === null ? PDO::PARAM_NULL : PDO::PARAM_INT);
+            $ins->bindValue(':en', $encargoId,   $encargoId   === null ? PDO::PARAM_NULL : PDO::PARAM_INT);
+            $ins->bindValue(':cl', $cliente);
+            $ins->bindValue(':to', $total === null ? null : number_format($total, 2, '.', ''));
+            $ins->bindValue(':fe', $fechaEntrega);
+            $ins->bindValue(':ev', $evidencia);
+            $ins->bindValue(':o',  $observacion);
+            $ins->execute();
 
             $id = (int) $this->db->lastInsertId();
-            $this->db->commit();
+            if ($owns) {
+                $this->db->commit();
+            }
             return $id;
         } catch (Throwable $e) {
-            if ($this->db->inTransaction()) {
+            if ($owns && $this->db->inTransaction()) {
                 $this->db->rollBack();
             }
             throw $e;
@@ -98,7 +137,8 @@ final class Movimiento extends BaseModel
         ?string $desde = null,
         ?string $hasta = null,
         ?int $limit = null,
-        int $offset = 0
+        int $offset = 0,
+        ?string $motivo = null
     ): array {
         $sql = "SELECT m.*, p.codigo AS producto_codigo, p.nombre AS producto_nombre,
                        u.nombre AS usuario_nombre, pr.nombre AS proveedor_nombre
@@ -108,7 +148,7 @@ final class Movimiento extends BaseModel
                 LEFT JOIN proveedores pr ON pr.id = m.proveedor_id
                 WHERE 1 = 1";
         $params = [];
-        $this->aplicarFiltrosHistorial($sql, $params, $productoId, $tipo, $desde, $hasta);
+        $this->aplicarFiltrosHistorial($sql, $params, $productoId, $tipo, $desde, $hasta, $motivo);
         $sql .= ' ORDER BY m.created_at DESC, m.id DESC';
         if ($limit !== null) {
             $sql .= ' LIMIT :__limit__ OFFSET :__offset__';
@@ -126,11 +166,11 @@ final class Movimiento extends BaseModel
         return $stmt->fetchAll();
     }
 
-    public function contarHistorial(?int $productoId = null, ?string $tipo = null, ?string $desde = null, ?string $hasta = null): int
+    public function contarHistorial(?int $productoId = null, ?string $tipo = null, ?string $desde = null, ?string $hasta = null, ?string $motivo = null): int
     {
         $sql = "SELECT COUNT(*) FROM `{$this->table}` m WHERE 1 = 1";
         $params = [];
-        $this->aplicarFiltrosHistorial($sql, $params, $productoId, $tipo, $desde, $hasta);
+        $this->aplicarFiltrosHistorial($sql, $params, $productoId, $tipo, $desde, $hasta, $motivo);
         $stmt = $this->db->prepare($sql);
         foreach ($params as $k => $v) {
             $stmt->bindValue($k, $v, $this->pdoType($v));
@@ -139,7 +179,17 @@ final class Movimiento extends BaseModel
         return (int) $stmt->fetchColumn();
     }
 
-    private function aplicarFiltrosHistorial(string &$sql, array &$params, ?int $productoId, ?string $tipo, ?string $desde, ?string $hasta): void
+    /** Devuelve el id si existe en `usuarios`; null en caso contrario. */
+    private function resolverUsuarioId(int $id): ?int
+    {
+        if ($id <= 0) return null;
+        $stmt = $this->db->prepare("SELECT id FROM usuarios WHERE id = :id LIMIT 1");
+        $stmt->execute([':id' => $id]);
+        $row = $stmt->fetch();
+        return $row !== false ? (int) $row['id'] : null;
+    }
+
+    private function aplicarFiltrosHistorial(string &$sql, array &$params, ?int $productoId, ?string $tipo, ?string $desde, ?string $hasta, ?string $motivo = null): void
     {
         if ($productoId !== null && $productoId > 0) {
             $sql .= ' AND m.producto_id = :pid';
@@ -148,6 +198,10 @@ final class Movimiento extends BaseModel
         if ($tipo !== null && $tipo !== '') {
             $sql .= ' AND m.tipo = :tipo';
             $params[':tipo'] = $tipo;
+        }
+        if ($motivo !== null && $motivo !== '') {
+            $sql .= ' AND m.motivo = :motivo';
+            $params[':motivo'] = $motivo;
         }
         if ($desde !== null && $desde !== '') {
             $sql .= ' AND m.created_at >= :desde';

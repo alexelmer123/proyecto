@@ -40,8 +40,8 @@
             "url": "movimiento/registrarEntrada"
         },
         {
-            "name": "Registrar salida",
-            "url": "movimiento/registrarSalida"
+            "name": "Registrar venta",
+            "url": "movimiento/registrarVenta"
         }
     ]
 }

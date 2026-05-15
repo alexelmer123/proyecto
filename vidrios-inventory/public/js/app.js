@@ -20,9 +20,124 @@
         initRemoveCurrentImage();
         initPermisosModulo();
         initUsuarioPermisos();
+        initEncargoItems();
         initSidebarDrawer();
         initPwa();
     });
+
+    /* -------------------------------------------------------------------------
+     * Encargos: filas dinámicas de productos en el form.
+     * - "Añadir producto" clona la plantilla <template data-encargo-item-template>.
+     * - Cada fila tiene su propio select de producto, cantidad y precio.
+     * - Calcula subtotal por fila y total global.
+     * - Al elegir producto, autocompleta precio con data-precio del <option>.
+     * - Al cambiar cantidad valida contra data-stock del producto seleccionado.
+     * ------------------------------------------------------------------------- */
+    function initEncargoItems() {
+        const container = document.querySelector('[data-encargo-items]');
+        if (!container) return;
+        const tpl = document.querySelector('[data-encargo-item-template]');
+        const totalEl = document.querySelector('[data-encargo-total]');
+        const addBtn  = document.querySelector('[data-encargo-item-add]');
+
+        const renameInputs = () => {
+            // Reasigna name="items[N][...]" en orden incremental tras añadir/quitar
+            container.querySelectorAll('[data-encargo-item]').forEach((row, i) => {
+                const prod = row.querySelector('[data-item-producto]');
+                const qty  = row.querySelector('[data-item-cantidad]');
+                const pre  = row.querySelector('[data-item-precio]');
+                if (prod) prod.name = `items[${i}][producto_id]`;
+                if (qty)  qty.name  = `items[${i}][cantidad]`;
+                if (pre)  pre.name  = `items[${i}][precio_unitario]`;
+            });
+        };
+
+        const recalcRow = (row) => {
+            const qty = parseFloat(row.querySelector('[data-item-cantidad]')?.value || '0');
+            const pre = parseFloat(row.querySelector('[data-item-precio]')?.value   || '0');
+            const sub = (qty > 0 && pre > 0) ? qty * pre : 0;
+            const subEl = row.querySelector('[data-item-subtotal]');
+            if (subEl) subEl.textContent = sub > 0 ? `S/. ${sub.toFixed(2)}` : 'S/. 0.00';
+            return sub;
+        };
+
+        const recalcTotal = () => {
+            let total = 0;
+            container.querySelectorAll('[data-encargo-item]').forEach((r) => { total += recalcRow(r); });
+            if (totalEl) totalEl.textContent = `S/. ${total.toFixed(2)}`;
+        };
+
+        const wireRow = (row) => {
+            const sel = row.querySelector('[data-item-producto]');
+            const qty = row.querySelector('[data-item-cantidad]');
+            const pre = row.querySelector('[data-item-precio]');
+
+            sel?.addEventListener('change', () => {
+                const opt = sel.options[sel.selectedIndex];
+                const precio = parseFloat(opt?.dataset.precio || '0');
+                if (precio > 0 && pre && pre.value === '') {
+                    pre.value = precio.toFixed(2);
+                }
+                validarStock(row);
+                recalcTotal();
+            });
+            qty?.addEventListener('input', () => { validarStock(row); recalcTotal(); });
+            pre?.addEventListener('input', recalcTotal);
+        };
+
+        const validarStock = (row) => {
+            const sel = row.querySelector('[data-item-producto]');
+            const qty = row.querySelector('[data-item-cantidad]');
+            if (!sel || !qty) return;
+            const opt = sel.options[sel.selectedIndex];
+            const stock = parseInt(opt?.dataset.stock || '0', 10);
+            const cant  = parseInt(qty.value || '0', 10);
+            if (sel.value && cant > stock) {
+                qty.setCustomValidity(`Stock disponible: ${stock}`);
+                row.classList.add('encargo-item--error');
+            } else {
+                qty.setCustomValidity('');
+                row.classList.remove('encargo-item--error');
+            }
+        };
+
+        // Wire de filas iniciales
+        container.querySelectorAll('[data-encargo-item]').forEach(wireRow);
+        recalcTotal();
+
+        // Añadir
+        addBtn?.addEventListener('click', () => {
+            if (!tpl) return;
+            const clone = tpl.content.firstElementChild.cloneNode(true);
+            container.appendChild(clone);
+            wireRow(clone);
+            renameInputs();
+            recalcTotal();
+            clone.querySelector('[data-item-producto]')?.focus();
+        });
+
+        // Quitar
+        container.addEventListener('click', (ev) => {
+            const btn = ev.target.closest('[data-encargo-item-remove]');
+            if (!btn) return;
+            const rows = container.querySelectorAll('[data-encargo-item]');
+            if (rows.length <= 1) {
+                // Si es la única fila, no la quitamos: la reseteamos.
+                const row = btn.closest('[data-encargo-item]');
+                row.querySelectorAll('input, select').forEach((i) => {
+                    if (i.tagName === 'SELECT') i.value = '';
+                    else if (i.dataset.itemCantidad !== undefined) i.value = '1';
+                    else i.value = '';
+                });
+                recalcRow(row);
+                recalcTotal();
+                return;
+            }
+            btn.closest('[data-encargo-item]')?.remove();
+            renameInputs();
+            recalcTotal();
+        });
+    }
 
     /* -------------------------------------------------------------------------
      * Roles: botón "Marcar todos / Desmarcar todos" por módulo.
