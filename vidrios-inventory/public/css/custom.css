@@ -2925,6 +2925,231 @@ html[data-theme="light"] .flash--success           { background: rgba(74,139,74,
 html[data-theme="light"] .flash--error             { background: rgba(177,71,71,.10); }
 
 /* ============================================================================
+   Roles y permisos · Grid de selección
+   ============================================================================ */
+.permisos-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: var(--sp-3);
+    margin-top: var(--sp-3);
+}
+.permisos-grid__module {
+    border: 1px solid var(--c-ink-4);
+    border-radius: var(--r-md);
+    background: rgba(255, 255, 255, .015);
+    padding: var(--sp-3);
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-2);
+}
+.permisos-grid__module-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-2);
+    padding-bottom: var(--sp-2);
+    border-bottom: 1px solid var(--c-ink-4);
+}
+.permisos-grid__module-title {
+    margin: 0;
+    font-size: var(--fz-sm);
+    font-weight: 600;
+    color: var(--c-mist-0);
+    text-transform: capitalize;
+}
+.permisos-grid__items {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+/* Checkbox de permiso */
+.permiso-check {
+    display: grid;
+    grid-template-columns: 18px 1fr;
+    align-items: start;
+    gap: var(--sp-2);
+    padding: 6px 8px;
+    border-radius: var(--r-sm);
+    cursor: pointer;
+    transition: background .15s, color .15s;
+    border: 1px solid transparent;
+}
+.permiso-check:hover { background: rgba(255, 255, 255, .03); }
+.permiso-check input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 0; height: 0; opacity: 0; margin: 0; padding: 0;
+    grid-column: 1; grid-row: 1;
+}
+.permiso-check__box {
+    width: 18px; height: 18px;
+    border: 1.5px solid var(--c-ink-5);
+    border-radius: 5px;
+    background: var(--c-ink-2);
+    display: grid;
+    place-items: center;
+    transition: background .15s, border-color .15s, transform .12s;
+    grid-column: 1; grid-row: 1;
+    position: relative;
+}
+.permiso-check__box::after {
+    content: '';
+    width: 10px; height: 6px;
+    border: 2px solid transparent;
+    border-top: 0; border-right: 0;
+    transform: rotate(-45deg) translate(1px, -1px);
+    transition: border-color .12s;
+}
+.permiso-check input:checked + .permiso-check__box {
+    background: var(--c-amber, var(--accent));
+    border-color: var(--c-amber, var(--accent));
+}
+.permiso-check input:checked + .permiso-check__box::after {
+    border-color: #1a1a1a;
+}
+.permiso-check input:focus-visible + .permiso-check__box {
+    outline: 2px solid var(--c-amber, var(--accent));
+    outline-offset: 2px;
+}
+.permiso-check__body {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+}
+.permiso-check__name {
+    font-size: var(--fz-sm);
+    color: var(--c-mist-0);
+    line-height: 1.3;
+}
+.permiso-check__code {
+    font-size: var(--fz-2xs);
+    color: var(--c-mist-2);
+}
+
+/* Estado: permiso heredado del rol (verde) */
+.permiso-check.is-from-role {
+    background: rgba(127, 191, 127, .07);
+    border-color: rgba(127, 191, 127, .25);
+    cursor: not-allowed;
+}
+.permiso-check.is-from-role .permiso-check__box {
+    background: var(--c-leaf, #7fbf7f);
+    border-color: var(--c-leaf, #7fbf7f);
+}
+.permiso-check.is-from-role .permiso-check__box::after {
+    border-color: #1a1a1a;
+}
+.permiso-check.is-from-role .permiso-check__name { color: var(--c-leaf, #7fbf7f); }
+
+/* Estado: permiso extra asignado al usuario (ámbar/teal) */
+.permiso-check.is-extra {
+    background: rgba(108, 182, 192, .08);
+    border-color: rgba(108, 182, 192, .35);
+}
+.permiso-check.is-extra .permiso-check__box {
+    background: var(--c-teal, #6cb6c0);
+    border-color: var(--c-teal, #6cb6c0);
+}
+.permiso-check.is-extra .permiso-check__name { color: var(--c-teal, #6cb6c0); }
+
+/* Etiqueta del rol/personalizado */
+.permisos-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-size: var(--fz-sm);
+    background: rgba(127, 191, 127, .10);
+    color: var(--c-leaf, #7fbf7f);
+    border: 1px solid rgba(127, 191, 127, .35);
+}
+.permisos-badge--custom {
+    background: rgba(108, 182, 192, .10);
+    color: var(--c-teal, #6cb6c0);
+    border-color: rgba(108, 182, 192, .4);
+}
+.permisos-badge--none {
+    background: rgba(255, 255, 255, .03);
+    color: var(--c-mist-2);
+    border-color: var(--c-ink-4);
+}
+.permisos-badge__extras {
+    font-family: var(--f-mono);
+    font-size: var(--fz-2xs);
+    background: rgba(0, 0, 0, .25);
+    padding: 1px 6px;
+    border-radius: 999px;
+    margin-left: 4px;
+}
+
+/* Leyenda con puntos de color */
+.legend-dot {
+    display: inline-block;
+    width: 10px; height: 10px;
+    border-radius: 999px;
+    vertical-align: middle;
+    margin-right: 2px;
+}
+.legend-dot--role  { background: var(--c-leaf, #7fbf7f); }
+.legend-dot--extra { background: var(--c-teal, #6cb6c0); }
+
+/* Switch / toggle */
+.switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    user-select: none;
+}
+.switch input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 0; height: 0; opacity: 0; position: absolute;
+}
+.switch__track {
+    position: relative;
+    width: 38px; height: 22px;
+    background: var(--c-ink-4);
+    border-radius: 999px;
+    transition: background .18s;
+    flex-shrink: 0;
+}
+.switch__thumb {
+    position: absolute;
+    top: 3px; left: 3px;
+    width: 16px; height: 16px;
+    border-radius: 999px;
+    background: var(--c-mist-1);
+    transition: transform .18s, background .18s;
+}
+.switch input:checked + .switch__track { background: var(--c-amber, var(--accent)); }
+.switch input:checked + .switch__track .switch__thumb {
+    transform: translateX(16px);
+    background: #1a1a1a;
+}
+.switch__label {
+    font-size: var(--fz-sm);
+    color: var(--c-mist-1);
+}
+
+/* Botón extra pequeño */
+.btn--xs {
+    padding: 4px 10px;
+    font-size: var(--fz-2xs);
+    letter-spacing: .04em;
+}
+
+/* Acomodar el card__foot con btns en columna en cards de roles */
+.card .card__foot { margin-top: var(--sp-3); gap: var(--sp-2); flex-wrap: wrap; }
+
+@media (max-width: 640px) {
+    .permisos-grid { grid-template-columns: 1fr; }
+}
+
+/* ============================================================================
    Detalle de producto (modal read-only desde el catálogo)
    ============================================================================ */
 .producto-detalle {

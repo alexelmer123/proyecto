@@ -25,10 +25,12 @@ CREATE TABLE IF NOT EXISTS `usuarios` (
     `nombre`        VARCHAR(120)  NOT NULL,
     `email`         VARCHAR(160)  NOT NULL UNIQUE,
     `password`      VARCHAR(255)  NOT NULL,
-    `rol`           ENUM('admin','operador') NOT NULL DEFAULT 'operador',
+    `rol`           VARCHAR(50)   NOT NULL DEFAULT 'operador',
+    `rol_id`        INT UNSIGNED  NULL,
     `activo`        TINYINT(1)    NOT NULL DEFAULT 1,
     `ultimo_acceso` DATETIME      NULL,
-    `created_at`    DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP
+    `created_at`    DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX `idx_usuarios_rol_id` (`rol_id`)
 ) ENGINE=InnoDB;
 
 -- ----------------------------------------------------------------------------
@@ -140,6 +142,50 @@ CREATE TABLE IF NOT EXISTS `roles_permisos` (
     CONSTRAINT `fk_rp_rol`     FOREIGN KEY (`rol_id`)     REFERENCES `roles`(`id`)    ON DELETE CASCADE,
     CONSTRAINT `fk_rp_permiso` FOREIGN KEY (`permiso_id`) REFERENCES `permisos`(`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB;
+
+-- Permisos extra individuales por usuario (encima de los del rol).
+CREATE TABLE IF NOT EXISTS `usuarios_permisos` (
+    `usuario_id` INT UNSIGNED NOT NULL,
+    `permiso_id` INT UNSIGNED NOT NULL,
+    PRIMARY KEY (`usuario_id`, `permiso_id`),
+    CONSTRAINT `fk_up_usuario` FOREIGN KEY (`usuario_id`) REFERENCES `usuarios`(`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_up_permiso` FOREIGN KEY (`permiso_id`) REFERENCES `permisos`(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+-- ----------------------------------------------------------------------------
+-- Migración para BDs existentes: si la columna `usuarios.rol_id` no existe
+-- la agregamos sin romper datos. Estos bloques son idempotentes — re-ejecutar
+-- el schema no fallará si la columna o la FK ya existen.
+-- ----------------------------------------------------------------------------
+SET @col_rolid = (SELECT COUNT(*) FROM information_schema.COLUMNS
+                  WHERE TABLE_SCHEMA = 'vidrios_inventory'
+                    AND TABLE_NAME = 'usuarios'
+                    AND COLUMN_NAME = 'rol_id');
+SET @sql = IF(@col_rolid = 0,
+    'ALTER TABLE `usuarios`
+        ADD COLUMN `rol_id` INT UNSIGNED NULL AFTER `rol`,
+        ADD INDEX `idx_usuarios_rol_id` (`rol_id`),
+        MODIFY COLUMN `rol` VARCHAR(50) NOT NULL DEFAULT ''operador''',
+    'SELECT 1');
+PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- FK usuarios.rol_id → roles.id
+SET @fk_rol = (SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS
+               WHERE CONSTRAINT_SCHEMA = 'vidrios_inventory'
+                 AND TABLE_NAME = 'usuarios'
+                 AND CONSTRAINT_NAME = 'fk_usuarios_rol');
+SET @sql = IF(@fk_rol = 0,
+    'ALTER TABLE `usuarios`
+        ADD CONSTRAINT `fk_usuarios_rol` FOREIGN KEY (`rol_id`)
+        REFERENCES `roles`(`id`) ON DELETE SET NULL ON UPDATE CASCADE',
+    'SELECT 1');
+PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- Backfill: para usuarios con rol_id NULL, copiar desde el nombre del rol.
+UPDATE `usuarios` u
+   JOIN `roles` r ON r.nombre = u.rol
+   SET u.rol_id = r.id
+ WHERE u.rol_id IS NULL;
 
 -- ============================================================================
 -- AUDITORIA

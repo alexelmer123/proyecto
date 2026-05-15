@@ -18,9 +18,121 @@
         initModalTriggers();
         initFileUploads();
         initRemoveCurrentImage();
+        initPermisosModulo();
+        initUsuarioPermisos();
         initSidebarDrawer();
         initPwa();
     });
+
+    /* -------------------------------------------------------------------------
+     * Roles: botón "Marcar todos / Desmarcar todos" por módulo.
+     * Activación: dentro de [data-permisos-modulo], un button[data-permisos-toggle-modulo].
+     * ------------------------------------------------------------------------- */
+    function initPermisosModulo() {
+        document.body.addEventListener('click', (ev) => {
+            const btn = ev.target.closest('[data-permisos-toggle-modulo]');
+            if (!btn) return;
+            ev.preventDefault();
+            const wrapper = btn.closest('[data-permisos-modulo]');
+            if (!wrapper) return;
+            const inputs = wrapper.querySelectorAll('input[type="checkbox"]:not(:disabled)');
+            const allChecked = Array.from(inputs).every((i) => i.checked);
+            inputs.forEach((i) => { i.checked = !allChecked; });
+            btn.textContent = allChecked ? 'Marcar todos' : 'Desmarcar todos';
+        });
+    }
+
+    /* -------------------------------------------------------------------------
+     * Usuarios: al cambiar el select de rol, marca los permisos del rol como
+     * "heredados" (verde, disabled) y permite añadir extras (otro color).
+     * Actualiza la etiqueta dinámica: "Rol: X" o "Personalizado".
+     * ------------------------------------------------------------------------- */
+    function initUsuarioPermisos() {
+        const form = document.querySelector('[data-usuario-form]');
+        if (!form) return;
+
+        const select  = form.querySelector('[data-rol-select]');
+        const grid    = form.querySelector('[data-permisos-grid]');
+        const badge   = form.querySelector('[data-permisos-badge]');
+        const baseUrl = form.dataset.permisosRolUrl || '';
+        if (!select || !grid || !badge) return;
+
+        const updateBadge = () => {
+            const extras = grid.querySelectorAll('.permiso-check.is-extra').length;
+            const rolName = select.options[select.selectedIndex]?.textContent.trim() || '';
+            if (!select.value) {
+                badge.className = 'permisos-badge permisos-badge--none';
+                badge.textContent = 'Sin rol asignado';
+                return;
+            }
+            if (extras > 0) {
+                badge.className = 'permisos-badge permisos-badge--custom';
+                badge.innerHTML = `Personalizado <small class="permisos-badge__extras">+${extras}</small>`;
+            } else {
+                badge.className = 'permisos-badge';
+                badge.innerHTML = `Rol: <strong>${escapeHtml(rolName)}</strong>`;
+            }
+        };
+
+        const aplicarPermisosRol = (idsRol) => {
+            const setRol = new Set(idsRol.map(Number));
+            grid.querySelectorAll('.permiso-check').forEach((lbl) => {
+                const pid = Number(lbl.dataset.permisoId);
+                const input = lbl.querySelector('[data-permiso-input]');
+                if (!input) return;
+
+                if (setRol.has(pid)) {
+                    // Pertenece al rol → marcado verde + disabled (no se envía como extra)
+                    lbl.classList.add('is-from-role');
+                    lbl.classList.remove('is-extra');
+                    input.checked = true;
+                    input.disabled = true;
+                } else {
+                    // No pertenece al rol nuevo. Si era heredado del rol anterior, se
+                    // desmarca; los que el usuario marcó como extras se conservan.
+                    const wasFromRole = lbl.classList.contains('is-from-role');
+                    lbl.classList.remove('is-from-role');
+                    input.disabled = false;
+                    if (wasFromRole) {
+                        input.checked = false;
+                        lbl.classList.remove('is-extra');
+                    } else if (input.checked) {
+                        lbl.classList.add('is-extra');
+                    } else {
+                        lbl.classList.remove('is-extra');
+                    }
+                }
+            });
+            updateBadge();
+        };
+
+        select.addEventListener('change', async () => {
+            if (!select.value) {
+                aplicarPermisosRol([]);
+                return;
+            }
+            try {
+                const res = await fetch(`${baseUrl}/${encodeURIComponent(select.value)}`, {
+                    headers: { 'Accept': 'application/json' },
+                    credentials: 'same-origin'
+                });
+                const data = await res.json();
+                aplicarPermisosRol(Array.isArray(data.permisos) ? data.permisos : []);
+            } catch (err) {
+                aplicarPermisosRol([]);
+            }
+        });
+
+        // Click en un checkbox no-rol → conmuta clase is-extra y refresca badge
+        grid.addEventListener('change', (ev) => {
+            const input = ev.target.closest('[data-permiso-input]');
+            if (!input || input.disabled) return;
+            const lbl = input.closest('.permiso-check');
+            if (!lbl) return;
+            lbl.classList.toggle('is-extra', input.checked);
+            updateBadge();
+        });
+    }
 
     /* -------------------------------------------------------------------------
      * Quitar la imagen actual al editar un producto.

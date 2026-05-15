@@ -99,7 +99,7 @@ $groupOpen = static function (array $needles) use ($activo): bool {
             </a>
         </details>
 
-        <details class="sidebar__group"<?= $groupOpen(['/auditoria', '/rol']) ? ' open' : '' ?>>
+        <details class="sidebar__group"<?= $groupOpen(['/auditoria', '/rol', '/usuario']) ? ' open' : '' ?>>
             <summary class="sidebar__section sidebar__section--toggle">
                 <span class="sidebar__section-label">Seguridad</span>
                 <span class="sidebar__caret" aria-hidden="true"><?= icon('chevron-down', 14) ?></span>
@@ -107,6 +107,10 @@ $groupOpen = static function (array $needles) use ($activo): bool {
             <a class="sidebar__link<?= $is('/auditoria') ?>" href="<?= BASE_URL ?>/auditoria/index">
                 <span class="sidebar__icon" aria-hidden="true"><?= icon('eye', 18) ?></span>
                 <span class="sidebar__label">Auditoría</span>
+            </a>
+            <a class="sidebar__link<?= $is('/usuario') ?>" href="<?= BASE_URL ?>/usuario/index">
+                <span class="sidebar__icon" aria-hidden="true"><?= icon('users', 18) ?></span>
+                <span class="sidebar__label">Usuarios</span>
             </a>
             <a class="sidebar__link<?= $is('/rol') ?>" href="<?= BASE_URL ?>/rol/index">
                 <span class="sidebar__icon" aria-hidden="true"><?= icon('shield', 18) ?></span>
