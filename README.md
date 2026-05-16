@@ -150,6 +150,258 @@ vidrios-inventory/
 | Roles | `/rol` | Visualización de roles y permisos |
 | Retazos | `/retazo` | Sobrantes aprovechables (no descuentan stock) |
 
+### Qué hace cada módulo (en detalle)
+
+A continuación se describen los módulos en orden de uso típico — desde lo que cargas primero hasta los reportes que consumes al final.
+
+#### Dashboard — `/dashboard`
+La pantalla de inicio cuando entras al sistema. Muestra **métricas en vivo**: total de productos activos, stock crítico, ventas del mes y movimientos recientes. Incluye dos gráficos: barras de flujo mensual (entradas vs salidas) y un donut con la distribución por categoría. Es de **solo lectura**; sirve para "ver de un vistazo" cómo va el taller.
+
+#### Productos (Catálogo) — `/producto`
+El corazón del inventario. Cada **producto** tiene código único, nombre, categoría, proveedor, **unidad de medida** (m², lámina, unidad, tubo o metro lineal), dimensiones que varían según la unidad, precios de compra y venta, stock actual y stock mínimo. Acciones disponibles: crear, editar, archivar, ver detalle, ajustar stock manualmente y exportar a CSV. Las imágenes de los productos se guardan en `public/img/productos/`.
+
+#### Categorías — `/categoria`
+Clasificación de productos en grupos lógicos (Vidrio, Consumibles, Herrajes, Perfiles, Tornillos…). Cada producto pertenece a **una** categoría. Permite activar/desactivar categorías sin perder los productos que las usan.
+
+#### Proveedores — `/proveedor`
+Directorio de a quién compras. Cada proveedor tiene nombre, contacto, teléfono, email y **ubicación geográfica en cascada**: País → Departamento → Provincia → Distrito → Ciudad. Esa cascada se llena dinámicamente con AJAX al elegir el nivel superior.
+
+#### Retazos — `/retazo`
+**Sobrantes aprovechables** generados al vender o entregar encargos (sólo aplica a unidades como m², lámina o metro lineal). Cada retazo guarda: producto, cantidad, medidas en cm (ancho/alto/longitud según la unidad), origen (salida o encargo), id del origen, observación y estado (disponible / aprovechado). **No descuentan stock**; sirven para que el operario sepa qué sobras tiene antes de cortar una pieza nueva.
+
+#### Movimientos — `/movimiento`
+La **bitácora de stock**. Cada cambio del inventario es un movimiento de tipo `entrada`, `salida` o `ajuste`. Las salidas además tienen un `motivo`: `venta`, `encargo`, `accidente` o `merma`. Cada movimiento guarda stock anterior, stock nuevo, cantidad, usuario, proveedor (si aplica) y observaciones. Todas las salidas pasan por `Movimiento::registrar()` que abre una transacción con `SELECT ... FOR UPDATE` para evitar carreras.
+
+#### Encargos — `/encargo`
+Reservas de productos para entrega futura. Al crearlo se **descuenta el stock inmediatamente** (queda apartado para el cliente). El encargo tiene 3 estados: `pendiente`, `entregado` o `cancelado`. Al marcar como entregado se abre un modal donde por cada producto puedes anotar mermas, accidentes o retazos generados en el corte/entrega. Al cancelar se devuelve el stock automáticamente.
+
+#### Pedidos — `/pedido`
+Órdenes de compra a proveedores. Cada pedido tiene número, proveedor, fecha de pedido, fecha de entrega prevista, total y estado (`pendiente`, `pagado` o `deuda`). Permite seguir cuánto se le ha pagado a cada proveedor y cuánto queda pendiente.
+
+#### Reportes — `/reporte`
+5 reportes con filtros y exportación a CSV:
+- **Stock** (`/reporte/stock`) — listado completo con stock actual, mínimo, faltante. Marca críticos.
+- **Mermas y accidentes** (`/reporte/mermas`) — movimientos con motivo merma o accidente, agrupados por producto o detalle cronológico.
+- **Ventas del día** (`/reporte/ventas`) — ventas por período (día/semana/mes).
+- **Consolidado de proveedores** (`/reporte/consolidadoProveedores`) — agrupa el inventario por proveedor con valorización a precio de compra.
+
+#### Auditoría — `/auditoria`
+Bitácora de acciones del sistema: quién hizo qué, sobre qué entidad y cuándo. Cada vez que un controlador llama a `Controller::audit()` se inserta una fila en la tabla `auditoria` con usuario, acción (crear/editar/eliminar/etc.), entidad afectada, id, descripción, IP y user-agent. **No bloquea el flujo de negocio** — si falla el log, el guardado normal continúa.
+
+#### Usuarios — `/usuario`
+Gestión de cuentas con email, nombre, rol (`admin` u `operador`) y permisos individuales adicionales. Las contraseñas se guardan con `password_hash()` (bcrypt). Admin puede crear, editar, activar/desactivar usuarios.
+
+#### Roles — `/rol`
+Visualización del modelo RBAC (Role-Based Access Control). Cada rol tiene un conjunto de permisos asignados (`producto.crear`, `movimiento.salida`, etc.). Los permisos se gestionan vía la tabla `roles_permisos` y opcionalmente vía `usuarios_permisos` para extras por usuario. **Nota**: hoy el control de acceso del request todavía mira `$_SESSION['usuario']['rol']` directamente con strings (`'admin'` vs `'operador'`); las tablas RBAC están conectadas a los modelos pero aún no son la fuente única de verdad.
+
+---
+
+## Arquitectura — el patrón MVC
+
+Este proyecto usa **MVC manual** (sin framework) porque la lógica de negocio cabe entera y queda más fácil de mantener sin abstracciones extra. A continuación, qué es MVC en palabras simples, cómo está organizado aquí y qué pasa exactamente cuando un usuario crea un producto.
+
+### Qué significan M, V y C
+
+MVC separa el código en **tres responsabilidades** que no se mezclan:
+
+| Pieza | Qué hace | Qué NO hace | Dónde vive |
+|---|---|---|---|
+| **Modelo (M)** | Conoce la base de datos. Hace consultas, valida invariantes del negocio, ejecuta transacciones. | NO genera HTML. NO sabe de URLs ni de sesiones. | `app/models/` |
+| **Vista (V)** | Genera HTML para mostrar al usuario. Recibe datos ya listos del controlador y los formatea. | NO consulta BD. NO modifica datos. | `app/views/` |
+| **Controlador (C)** | Es el "policía de tráfico". Recibe la petición, llama al modelo, decide qué vista mostrar y con qué datos. | NO escribe SQL directamente. NO contiene HTML grande. | `app/controllers/` |
+
+La regla simple: el navegador habla con el controlador, el controlador habla con el modelo, y la vista solo lee datos para pintar.
+
+### Cómo se conectan en este proyecto
+
+```
+[Navegador] HTTP request
+     │
+     ▼
+[Apache + .htaccess]
+   reescribe la URL → /public/index.php?url=<ruta>
+     │
+     ▼
+[public/index.php] (front-controller)
+   - inicia sesión
+   - carga config/, core/ y registra el autoloader
+     │
+     ▼
+[core/Router.php]
+   parsea la URL → decide qué Controlador@acción ejecutar
+     │
+     ▼
+[app/controllers/XxxController.php]
+   - valida la petición
+   - llama al modelo
+     │
+     ▼
+[app/models/Xxx.php]
+   - ejecuta SQL (PDO con prepared statements)
+   - devuelve datos al controlador
+     │
+     ▼
+[app/views/.../*.php]
+   - recibe los datos
+   - genera HTML
+     │
+     ▼
+[Navegador] respuesta HTML
+```
+
+Las piezas en `core/` son la **infraestructura compartida**: `Database` (singleton PDO), `Router`, `Controller` base, `Model` base, `Paginator`, `Exporter`. Todo lo de negocio vive en `app/`.
+
+### Ejemplo paso a paso — crear un producto
+
+Imaginemos que el administrador entra al catálogo, presiona "Nuevo producto", rellena el formulario y presiona "Crear producto". Esto es **exactamente** lo que pasa entre bambalinas.
+
+#### 1. El navegador envía el POST
+
+El form del modal hace:
+```
+POST /vidrios-inventory/producto/crear
+Content-Type: multipart/form-data
+codigo=&nombre=Plancha+4mm&categoria_id=1&unidad=lámina&ancho=1830&alto=2440&grosor=4&precio_compra=180000&precio_venta=320000&stock_actual=10&stock_minimo=5
+```
+
+#### 2. Apache reescribe la URL
+
+[`public/.htaccess`](vidrios-inventory/.htaccess) detecta que `/producto/crear` no es un archivo físico y aplica `RewriteRule`:
+```
+/producto/crear  →  /public/index.php?url=producto/crear
+```
+También bloquea acceso directo a `app/`, `core/`, `config/` y `database/`.
+
+#### 3. `public/index.php` arranca el sistema
+
+[`public/index.php`](vidrios-inventory/public/index.php) hace 4 cosas en orden:
+1. `session_start()` — restaura la sesión del usuario.
+2. Define la constante `ROOT` y carga `config/config.php` (constantes globales) y `config/database.php` (credenciales BD).
+3. **Carga manualmente** los 5 archivos de `core/`: `Database`, `Model`, `Controller`, `Router`, `Paginator`, `Exporter`, más los helpers `Icons.php` y `Format.php`.
+4. Registra un `spl_autoload_register` que resuelve clases de `app/controllers/` y `app/models/` bajo demanda.
+
+#### 4. El Router decide qué se ejecuta
+
+[`core/Router.php`](vidrios-inventory/core/Router.php) parsea la URL `producto/crear`:
+- Primer segmento → `Producto` + sufijo `Controller` → busca la clase `ProductoController`.
+- Segundo segmento → `crear` (en camelCase) → método `crear()` del controlador.
+- Segmentos restantes (ninguno aquí) → argumentos posicionales.
+
+El autoloader carga [`app/controllers/ProductoController.php`](vidrios-inventory/app/controllers/ProductoController.php) automáticamente.
+
+#### 5. El Controlador valida y llama al Modelo
+
+`ProductoController::crear()` (`ProductoController.php:42`) hace en orden:
+
+1. **Requiere autenticación** con `$this->requireAuth()`. Si no hay sesión válida, redirige a `/auth/login`.
+2. **Detecta que es POST** y extrae el formulario:
+   ```php
+   $form = $this->extraerForm($_POST);
+   ```
+   Este helper privado limpia y castea cada campo (`trim()`, `(int)`, `(float)`, valida que la unidad esté en la lista permitida, etc.).
+3. **Valida** con `$errores = $this->validar($form)` — devuelve un arreglo con errores por campo. Si está vacío, todo pasó.
+4. Si el código vino vacío, **autogenera uno** llamando a `$this->productos->generarCodigoUnico()` que pertenece al modelo.
+5. **Procesa la imagen** con `procesarImagen()` (valida MIME, tamaño, mueve el archivo a `public/img/productos/`).
+6. Si no hay errores, **llama al modelo para guardar**:
+   ```php
+   $newId = $this->productos->create($form);
+   ```
+7. **Registra en la auditoría**:
+   ```php
+   $this->audit('crear', 'producto', (string) $newId, "Producto «{$form['nombre']}» creado.");
+   ```
+8. **Pone un mensaje flash** en sesión y **redirige** al listado:
+   ```php
+   $this->setFlash('success', "Producto «{$form['nombre']}» creado correctamente.");
+   $this->redirect('/producto/index');
+   ```
+
+#### 6. El Modelo escribe en la base de datos
+
+[`app/models/Producto.php`](vidrios-inventory/app/models/Producto.php) extiende `BaseModel`, que a su vez extiende `core/Model.php`. El método `create($datos)` heredado:
+1. Construye un `INSERT INTO productos (...) VALUES (...)` con **placeholders** para cada columna.
+2. Llama a `PDO::prepare()` y luego a `execute()` con los valores.
+3. Devuelve el `lastInsertId()`.
+
+Como toda inserción usa **prepared statements**, no hay forma de inyectar SQL desde el formulario.
+
+La conexión PDO viene del singleton en [`core/Database.php`](vidrios-inventory/core/Database.php) — todos los modelos comparten la misma conexión por petición.
+
+#### 7. La redirección dispara una nueva petición GET
+
+El navegador recibe un `HTTP 302` con `Location: /vidrios-inventory/producto/index`. Hace un GET a esa URL y todo el ciclo se repite:
+- Apache rewrite → `index.php?url=producto/index`
+- Router → `ProductoController::index()`
+- Controller llama a `Producto::buscar(...)` y `Producto::contarBusqueda(...)` (para paginación)
+- Controller llama a `$this->render('productos/index', [...])` con los productos y filtros
+
+#### 8. La Vista genera el HTML
+
+`$this->render(...)` (en `core/Controller.php:10`):
+1. Carga las variables globales del layout (`$usuario`, `$stockBajoCount`, `$flash`).
+2. Hace `extract($data, EXTR_SKIP)` para que las claves del array se vuelvan variables PHP en la vista.
+3. Incluye `app/views/layouts/header.php`, luego `layouts/sidebar.php`, luego la vista pedida [`app/views/productos/index.php`](vidrios-inventory/app/views/productos/index.php), y finalmente `layouts/footer.php`.
+4. La vista usa los datos para pintar HTML con tarjetas. En la cabecera aparece el mensaje verde "Producto «Plancha 4mm» creado correctamente" leído desde `$flash`.
+
+#### 9. El usuario ve el resultado
+
+El navegador recibe el HTML del catálogo actualizado con la nueva tarjeta visible y el flash de éxito. Todo el ciclo tomó típicamente **menos de 50 ms** en localhost.
+
+### Resumen visual del flujo del ejemplo
+
+```
+[Navegador] POST /producto/crear (con datos del form)
+     │
+     ▼
+[.htaccess] rewrite → /public/index.php?url=producto/crear
+     │
+     ▼
+[index.php] session_start, carga core/, registra autoloader
+     │
+     ▼
+[Router] producto + crear → ProductoController::crear()
+     │
+     ▼
+[ProductoController]
+   ├─ requireAuth()                       ← seguridad
+   ├─ extraerForm($_POST)                 ← limpieza/cast
+   ├─ validar($form)                      ← reglas de negocio
+   ├─ procesarImagen('imagen')            ← upload
+   ├─ $productos->create($form)           ← llamada al Modelo
+   └─ setFlash + redirect('/producto/index')
+     │
+     ▼
+[Producto Modelo]
+   └─ INSERT INTO productos VALUES (...)  ← PDO prepared
+     │
+     ▼
+[Auditoria Modelo]
+   └─ INSERT INTO auditoria (...)         ← traza
+     │
+     ▼
+[HTTP 302] → nueva petición GET /producto/index
+     │
+     ▼
+[ProductoController::index()]
+   ├─ Producto::buscar(...)               ← consulta listado
+   ├─ Producto::contarBusqueda(...)       ← total para paginación
+   └─ render('productos/index', [...])
+     │
+     ▼
+[Vista productos/index.php]
+   └─ HTML con las tarjetas y flash de éxito
+     │
+     ▼
+[Navegador] muestra el catálogo actualizado
+```
+
+### Por qué este diseño funciona bien aquí
+
+- **Sin dependencias**: no hay Composer ni `vendor/`. Para desplegar basta con copiar la carpeta.
+- **Cambios localizados**: si cambia una regla de stock, modificas un modelo. Si cambia un texto, modificas una vista. Si cambia una ruta, modificas un controlador.
+- **Trazabilidad**: el `audit()` registra cada operación; la sesión registra el usuario; las transacciones agrupan operaciones críticas.
+- **Seguridad por capas**: `.htaccess` bloquea acceso directo a internals; los controladores filtran con `requireAuth/requireAdmin`; los modelos usan prepared statements; las contraseñas pasan por bcrypt.
+
 ---
 
 ## Flujos de uso
@@ -431,16 +683,6 @@ Esta tabla es la "letra chica" que rige toda la lógica anterior:
 | `Unidad` | ❌ No | ❌ No | — |
 | `Tubo` | ❌ No | ❌ No | — |
 | `Metro lineal` | ✅ Sí (0.01) | ✅ Sí | Longitud (cm) |
-
----
-
-## Flujo técnico de una petición
-
-```
-Navegador → Apache (.htaccess) → public/index.php → Router
-  → Controller → Model → Base de datos
-  → Controller → View → Respuesta HTML
-```
 
 ---
 
