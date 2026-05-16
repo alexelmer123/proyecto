@@ -1,0 +1,180 @@
+/* ============================================================================
+   Vitralia — estilos del subsistema en tiempo real (toasts + indicador).
+   Pensados para encajar con la paleta dark/light de custom.css.
+   ============================================================================ */
+
+/* Indicador "live" en el topbar */
+.rt-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 9px 3px 7px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    border: 1px solid var(--border, rgba(255,255,255,0.08));
+    background: rgba(255,255,255,0.03);
+    color: var(--muted, #8b95a7);
+    transition: color .25s ease, background-color .25s ease, border-color .25s ease;
+    user-select: none;
+}
+.rt-indicator__dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: currentColor;
+    box-shadow: 0 0 0 0 currentColor;
+}
+.rt-indicator--on {
+    color: #34d399;
+    border-color: rgba(52, 211, 153, 0.35);
+    background: rgba(52, 211, 153, 0.08);
+}
+.rt-indicator--on .rt-indicator__dot {
+    animation: rtPulse 1.6s ease-in-out infinite;
+}
+.rt-indicator--off {
+    color: #9ca3af;
+    opacity: 0.65;
+}
+@keyframes rtPulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.55); }
+    50%      { box-shadow: 0 0 0 6px rgba(52, 211, 153, 0); }
+}
+
+/* Contenedor de toasts (esquina inferior derecha) */
+.rt-toasts {
+    position: fixed;
+    right: 20px;
+    bottom: 20px;
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    pointer-events: none;
+    max-width: min(360px, calc(100vw - 32px));
+}
+
+/* Toast base */
+.rt-toast {
+    pointer-events: auto;
+    background: var(--card, #161b22);
+    color: var(--fg, #e6e9ef);
+    border: 1px solid var(--border, rgba(255,255,255,0.08));
+    border-left: 3px solid #6b7280;
+    border-radius: 10px;
+    padding: 12px 14px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.35), 0 2px 6px rgba(0,0,0,0.2);
+    font-size: 13px;
+    line-height: 1.4;
+    transform: translateX(120%);
+    opacity: 0;
+    transition: transform .35s cubic-bezier(.22,1,.36,1), opacity .35s ease;
+}
+.rt-toast--in {
+    transform: translateX(0);
+    opacity: 1;
+}
+.rt-toast--out {
+    transform: translateX(120%);
+    opacity: 0;
+}
+.rt-toast--down { border-left-color: #ef4444; }
+.rt-toast--up   { border-left-color: #22c55e; }
+.rt-toast--info { border-left-color: #3b82f6; }
+
+.rt-toast__head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    font-weight: 700;
+    margin-bottom: 6px;
+    color: var(--muted, #8b95a7);
+}
+.rt-toast__tag {
+    color: var(--fg, #e6e9ef);
+}
+.rt-toast__motivo {
+    padding: 1px 7px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.06);
+    color: var(--muted, #8b95a7);
+    font-size: 10px;
+}
+.rt-toast__body { margin-bottom: 6px; }
+.rt-toast__code {
+    font-family: var(--mono, "JetBrains Mono", monospace);
+    font-size: 11px;
+    opacity: 0.7;
+    margin-left: 6px;
+}
+.rt-toast__meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    font-size: 12px;
+}
+.rt-toast__stock {
+    color: var(--muted, #8b95a7);
+}
+.rt-toast__stock strong {
+    color: var(--fg, #e6e9ef);
+}
+.rt-toast__foot {
+    margin-top: 6px;
+    font-size: 11px;
+    color: var(--muted, #8b95a7);
+    opacity: 0.85;
+}
+
+.rt-delta {
+    font-weight: 700;
+    font-family: var(--mono, "JetBrains Mono", monospace);
+    padding: 1px 6px;
+    border-radius: 6px;
+}
+.rt-delta--down    { background: rgba(239, 68, 68, 0.15); color: #fca5a5; }
+.rt-delta--up      { background: rgba(34, 197, 94, 0.15); color: #86efac; }
+.rt-delta--neutral { background: rgba(148, 163, 184, 0.15); color: #cbd5e1; }
+
+/* Filas/tarjetas marcadas como obsoletas tras un evento */
+.rt-stale {
+    position: relative;
+    animation: rtStaleFlash 2.8s ease-out forwards;
+}
+@keyframes rtStaleFlash {
+    0%   { box-shadow: inset 0 0 0 2px rgba(251, 191, 36, 0.6); background-color: rgba(251, 191, 36, 0.06); }
+    100% { box-shadow: inset 0 0 0 0 rgba(251, 191, 36, 0); background-color: transparent; }
+}
+
+/* Modo claro: invertir contrastes */
+:root[data-theme="light"] .rt-toast {
+    background: #fdfaf0;
+    color: #1e1c18;
+    border-color: rgba(0,0,0,0.08);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.10), 0 2px 6px rgba(0,0,0,0.06);
+}
+:root[data-theme="light"] .rt-toast__motivo {
+    background: rgba(0,0,0,0.05);
+}
+:root[data-theme="light"] .rt-indicator {
+    border-color: rgba(0,0,0,0.1);
+    background: rgba(0,0,0,0.03);
+}
+
+/* Móvil */
+@media (max-width: 540px) {
+    .rt-toasts {
+        right: 8px;
+        left: 8px;
+        bottom: 8px;
+        max-width: none;
+    }
+    .rt-indicator__label { display: none; }
+}

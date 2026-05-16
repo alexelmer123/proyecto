@@ -25,7 +25,8 @@ $h = static fn(?string $s): string => htmlspecialchars((string) $s, ENT_QUOTES, 
 <?php else: ?>
     <section class="cards-grid">
         <?php foreach ($roles as $r): ?>
-            <article class="card card--cat<?= (int) $r['activo'] === 0 ? ' is-disabled' : '' ?>">
+            <article class="card card--cat<?= (int) $r['activo'] === 0 ? ' is-disabled' : '' ?>"
+                     data-entity-id="rol:<?= (int) $r['id'] ?>">
                 <header class="card__head">
                     <h3 class="card__title"><?= $h(ucfirst((string) $r['nombre'])) ?></h3>
                     <span class="badge badge--neutral mono"><?= (int) $r['total_permisos'] ?> permisos</span>

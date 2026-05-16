@@ -59,7 +59,7 @@ $money = static fn(float $n): string  => 'S/. ' . number_format($n, 0, ',', '.')
         <?php foreach ($pedidos as $p):
             $saldo = (float) $p['saldo'];
         ?>
-            <tr class="table__row">
+            <tr class="table__row" data-entity-id="pedido:<?= (int) $p['id'] ?>">
                 <td class="table__td mono"><?= $h($p['numero']) ?></td>
                 <td class="table__td"><strong><?= $h($p['proveedor_nombre'] ?? '—') ?></strong></td>
                 <td class="table__td mono"><?= $h($p['fecha_pedido']) ?></td>

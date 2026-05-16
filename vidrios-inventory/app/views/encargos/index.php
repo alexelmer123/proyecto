@@ -39,7 +39,8 @@ $estadoLabels = ['pendiente' => 'Pendiente', 'entregado' => 'Entregado', 'cancel
             $estadoActual = (string) $e['estado'];
             $totalValor   = (float) ($e['total_valor'] ?? 0);
         ?>
-            <article class="encargo-card encargo-card--<?= $h($estadoActual) ?>">
+            <article class="encargo-card encargo-card--<?= $h($estadoActual) ?>"
+                     data-entity-id="encargo:<?= (int) $e['id'] ?>">
                 <header class="encargo-card__head">
                     <div class="encargo-card__meta">
                         <span class="encargo-card__code mono"><?= $h($e['codigo']) ?></span>

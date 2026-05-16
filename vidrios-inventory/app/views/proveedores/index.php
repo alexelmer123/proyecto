@@ -46,7 +46,8 @@ $h = static fn(?string $s): string => htmlspecialchars((string) $s, ENT_QUOTES, 
         <?php foreach ($proveedores as $p):
             $ubic = trim(($p['ciudad_nombre'] ?? '') . (!empty($p['pais_nombre']) ? ', ' . $p['pais_nombre'] : ''), ', ');
         ?>
-            <tr class="table__row<?= ((int)$p['estado'] === 0 ? ' is-disabled' : '') ?>">
+            <tr class="table__row<?= ((int)$p['estado'] === 0 ? ' is-disabled' : '') ?>"
+                data-entity-id="proveedor:<?= (int) $p['id'] ?>">
                 <td class="table__td">
                     <strong><?= $h($p['nombre']) ?></strong>
                     <?php if (!empty($p['email'])): ?>

@@ -7,6 +7,7 @@ define('ROOT', dirname(__DIR__));
 
 require ROOT . '/config/config.php';
 require ROOT . '/config/database.php';
+require ROOT . '/config/realtime.php';
 
 require ROOT . '/core/Database.php';
 require ROOT . '/core/Model.php';
@@ -16,6 +17,7 @@ require ROOT . '/core/Paginator.php';
 require ROOT . '/core/Exporter.php';
 require ROOT . '/core/Icons.php';
 require ROOT . '/core/Format.php';
+require ROOT . '/core/Realtime.php';
 
 spl_autoload_register(function (string $class): void {
     foreach (['app/controllers', 'app/models'] as $dir) {

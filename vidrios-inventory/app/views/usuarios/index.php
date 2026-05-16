@@ -39,7 +39,7 @@ $h = static fn(?string $s): string => htmlspecialchars((string) $s, ENT_QUOTES, 
                     $extras    = (int) ($u['extras_count'] ?? 0);
                     $rolNombre = (string) ($u['rol_nombre'] ?? $u['rol'] ?? '');
                 ?>
-                    <tr class="table__row">
+                    <tr class="table__row" data-entity-id="usuario:<?= (int) $u['id'] ?>">
                         <td class="table__td"><strong><?= $h($u['nombre']) ?></strong></td>
                         <td class="table__td mono"><?= $h($u['email']) ?></td>
                         <td class="table__td">

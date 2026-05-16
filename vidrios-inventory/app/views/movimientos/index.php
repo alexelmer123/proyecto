@@ -112,7 +112,7 @@ $motivoLabels = ['venta' => 'Venta', 'encargo' => 'Encargo', 'accidente' => 'Acc
             if (!empty($m['observacion']))     $detalle[] = $m['observacion'];
             $detalleStr = $detalle ? implode(' · ', $detalle) : '—';
         ?>
-            <tr class="table__row">
+            <tr class="table__row" data-producto-id="<?= (int) $m['producto_id'] ?>">
                 <td class="table__td mono"><?= $h($m['created_at']) ?></td>
                 <td class="table__td">
                     <strong class="mono"><?= $h($m['producto_codigo']) ?></strong>

@@ -31,7 +31,8 @@ $h = static fn(?string $s): string => htmlspecialchars((string) $s, ENT_QUOTES, 
     <?php endif; ?>
 
     <?php foreach ($categorias as $c): ?>
-        <article class="card card--cat<?= ((int)$c['estado'] === 0 ? ' is-disabled' : '') ?>">
+        <article class="card card--cat<?= ((int)$c['estado'] === 0 ? ' is-disabled' : '') ?>"
+                 data-entity-id="categoria:<?= (int) $c['id'] ?>">
             <header class="card__head">
                 <h3 class="card__title"><?= $h($c['nombre']) ?></h3>
                 <span class="badge badge--neutral mono"><?= (int) ($c['total_productos'] ?? 0) ?> ítems</span>

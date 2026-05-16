@@ -65,6 +65,12 @@ final class EncargoController extends Controller
                     );
                     $this->audit('crear', 'encargo', (string) $id,
                         "Encargo para «{$form['cliente']}» con " . count($items) . ' producto(s).');
+                    $this->publishEncargo(
+                        array_column($items, 'producto_id'),
+                        Movimiento::TIPO_SALIDA,
+                        Movimiento::MOTIVO_ENCARGO,
+                        'Encargo para ' . $form['cliente']
+                    );
                     $this->setFlash('success', 'Encargo registrado y stock descontado.');
                     $this->redirect('/encargo/detalle/' . $id);
                 } catch (Throwable $e) {
@@ -121,12 +127,23 @@ final class EncargoController extends Controller
 
             if ($errores === []) {
                 try {
+                    $itemsPrevios = $this->encargos->itemsDe($id);
                     $this->encargos->actualizarConItems(
                         $id, $form, $items,
                         (int) $_SESSION['usuario']['id']
                     );
                     $this->audit('editar', 'encargo', (string) $id,
                         "Encargo «{$encargo['codigo']}» editado.");
+                    $afectados = array_merge(
+                        array_column($itemsPrevios, 'producto_id'),
+                        array_column($items, 'producto_id')
+                    );
+                    $this->publishEncargo(
+                        $afectados,
+                        Movimiento::TIPO_AJUSTE,
+                        Movimiento::MOTIVO_ENCARGO,
+                        "Encargo {$encargo['codigo']} editado"
+                    );
                     $this->setFlash('success', 'Encargo actualizado.');
                     $this->redirect('/encargo/detalle/' . $id);
                 } catch (Throwable $e) {
@@ -197,12 +214,23 @@ final class EncargoController extends Controller
 
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             try {
+                $mermas = $this->normalizarMermasEntrega($_POST['mermas'] ?? []);
                 $this->encargos->entregar(
                     $id,
                     (int) $_SESSION['usuario']['id'],
-                    $this->normalizarMermasEntrega($_POST['mermas'] ?? [])
+                    $mermas
                 );
                 $this->audit('entregar', 'encargo', (string) $id, 'Encargo marcado como entregado.');
+                // Las mermas descuentan stock extra; difundimos por cada
+                // producto afectado para que inventario lo vea en vivo.
+                if ($mermas !== []) {
+                    $this->publishEncargo(
+                        array_column($mermas, 'producto_id'),
+                        Movimiento::TIPO_SALIDA,
+                        Movimiento::MOTIVO_MERMA,
+                        "Mermas en entrega del encargo {$encargo['codigo']}"
+                    );
+                }
                 $this->setFlash('success', 'Encargo marcado como entregado.');
                 if ($this->isAjax()) {
                     http_response_code(200);
@@ -275,13 +303,41 @@ final class EncargoController extends Controller
         $id = (int) $id;
         $motivo = trim((string) ($_POST['motivo'] ?? $_GET['motivo'] ?? ''));
         try {
+            // Capturamos los items antes de cancelar para saber a qué
+            // productos se les devolvió stock.
+            $itemsPrevios = $this->encargos->itemsDe($id);
             $this->encargos->cancelar($id, (int) $_SESSION['usuario']['id'], $motivo);
             $this->audit('cancelar', 'encargo', (string) $id, 'Encargo cancelado; stock restituido.');
+            $this->publishEncargo(
+                array_column($itemsPrevios, 'producto_id'),
+                Movimiento::TIPO_ENTRADA,
+                Movimiento::MOTIVO_ENCARGO,
+                'Cancelación de encargo'
+            );
             $this->setFlash('success', 'Encargo cancelado y stock devuelto.');
         } catch (Throwable $e) {
             $this->setFlash('error', $e->getMessage());
         }
         $this->redirect('/encargo/detalle/' . $id);
+    }
+
+    /**
+     * Difunde un evento de cambio de stock por cada producto afectado por una
+     * operación de encargo. `Realtime::publishStockChange()` resuelve el stock
+     * actualizado leyéndolo de la BD, por lo que sólo necesitamos los IDs.
+     *
+     * @param array<int, mixed> $productIds
+     */
+    private function publishEncargo(array $productIds, string $tipo, ?string $motivo, ?string $observacion): void
+    {
+        $ids = array_unique(array_filter(array_map('intval', $productIds), static fn ($v) => $v > 0));
+        foreach ($ids as $pid) {
+            Realtime::publishStockChange($pid, [
+                'tipo'        => $tipo,
+                'motivo'      => $motivo,
+                'observacion' => $observacion,
+            ]);
+        }
     }
 
     /** @return array<string, mixed> */

@@ -114,6 +114,38 @@ abstract class Controller
         } catch (Throwable) {
             // La auditoría no debe romper el flujo del negocio.
         }
+        // Emite también un evento en vivo para que el resto de usuarios vean
+        // el cambio sin recargar. Se ejecuta DESPUÉS del audit, así que si
+        // el daemon WS está caído sólo perdemos el broadcast, no la traza.
+        try {
+            Realtime::publishEntityChange($accion, $entidad, $entidadId, $descripcion, [
+                'refresh_url' => $this->realtimeRefreshUrl($entidad, $entidadId),
+            ]);
+        } catch (Throwable) {
+            // El realtime es opcional; cualquier fallo es invisible.
+        }
+    }
+
+    /**
+     * URL que el cliente JS puede usar para re-fetch del HTML actualizado de
+     * una fila/tarjeta de esta entidad. Para entidades sin partial registrado
+     * devuelve null y el cliente sólo muestra toast + parpadeo (sin reemplazo
+     * in-place). Para extender a un módulo nuevo: añade una acción
+     * `partial($id)` al controlador y registra aquí su URL.
+     */
+    private function realtimeRefreshUrl(string $entidad, ?string $entidadId): ?string
+    {
+        if ($entidadId === null || $entidadId === '') {
+            return null;
+        }
+        $map = [
+            'producto' => '/producto/tarjeta/',
+        ];
+        if (!isset($map[$entidad])) {
+            return null;
+        }
+        $base = defined('BASE_URL') ? rtrim((string) BASE_URL, '/') : '';
+        return $base . $map[$entidad] . rawurlencode((string) $entidadId);
     }
 
     protected function userId(): ?int

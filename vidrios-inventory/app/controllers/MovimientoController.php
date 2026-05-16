@@ -110,6 +110,13 @@ final class MovimientoController extends Controller
                 );
                 $cantTxt = $this->formatCantidad($cantidad);
                 $this->audit('entrada', 'movimiento', (string) $productoId, "Entrada de {$cantTxt} unidades.");
+                Realtime::publishStockChange($productoId, [
+                    'tipo'        => Movimiento::TIPO_ENTRADA,
+                    'motivo'      => null,
+                    'cantidad'    => $cantidad,
+                    'delta'       => $cantidad,
+                    'observacion' => $obs !== '' ? $obs : null,
+                ]);
                 $this->setFlash('success', "Entrada registrada (+{$cantTxt}).");
                 $this->redirect('/movimiento/historial');
             } catch (Throwable $e) {
@@ -231,6 +238,15 @@ final class MovimientoController extends Controller
                         . ($mermasRegistradas > 0 ? " + {$mermaTxt} en mermas." : '.')
                         . ($retazosCount > 0 ? " {$retazosCount} retazo(s) guardados." : '');
                     $this->audit('salida', 'movimiento', (string) $form['producto_id'], $detalleAudit);
+                    Realtime::publishStockChange($form['producto_id'], [
+                        'tipo'        => Movimiento::TIPO_SALIDA,
+                        'motivo'      => $motivo,
+                        'cantidad'    => $form['cantidad'] + $mermasRegistradas,
+                        'delta'       => -($form['cantidad'] + $mermasRegistradas),
+                        'cliente'     => $form['cliente'] !== '' ? $form['cliente'] : null,
+                        'observacion' => $form['observacion'] !== '' ? $form['observacion'] : null,
+                        'retazos'     => $retazosCount,
+                    ]);
                     $this->setFlash('success', $this->mensajeExito($motivo, $form['cantidad'], $mermasRegistradas, $retazosCount));
                     $this->redirect('/movimiento/historial?motivo=' . $motivo);
                 } catch (Throwable $e) {

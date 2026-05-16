@@ -13,6 +13,7 @@
 - **Reportes exportables a CSV**: stock crítico, valor de inventario, ventas por período y consolidado de proveedores
 - **Auditoría de acciones** — registro de quién hizo qué y cuándo
 - **Dashboard** con métricas en tiempo real y alertas de stock bajo
+- **Sincronización en vivo (WebSocket)** — cuando un usuario registra una venta, todos los navegadores conectados ven el descuento de stock al instante sin recargar la página
 - **Gestión de proveedores** con ubicación geográfica en cascada (país → departamento → provincia → distrito → ciudad)
 - **Roles de acceso**: `admin` (acceso total) y `operador` (registro de movimientos)
 
@@ -22,10 +23,12 @@
 
 | Capa | Tecnología |
 |---|---|
-| Backend | PHP 8 — MVC sin framework, sin Composer |
+| Backend | PHP 8 — MVC sin framework |
 | Base de datos | MySQL 8 / InnoDB / utf8mb4 |
-| Servidor | Apache + mod_rewrite (Laragon / XAMPP / WAMP) |
-| Frontend | HTML5, CSS3 propio, JavaScript vanilla |
+| Servidor web | Apache + mod_rewrite (Laragon / XAMPP / WAMP) |
+| Tiempo real | Daemon PHP con **Ratchet** (WebSocket) + **ReactPHP** (event loop) |
+| Dependencias del daemon | Composer (sólo para el módulo realtime; el resto de la app no lo usa) |
+| Frontend | HTML5, CSS3 propio, JavaScript vanilla + WebSocket API |
 | Sesiones | PHP nativas (`$_SESSION`) |
 | Seguridad | PDO con prepared statements, bcrypt para contraseñas |
 
@@ -33,10 +36,11 @@
 
 ## Requisitos
 
-- PHP 8.0 o superior
+- PHP 8.1 o superior (CLI + módulo Apache)
 - MySQL 8.0 o superior
 - Apache con `mod_rewrite` y `mod_headers` activos
-- Extensiones PHP: `pdo_mysql`, `fileinfo`, `zip`
+- Extensiones PHP: `pdo_mysql`, `fileinfo`, `zip`, `sockets`
+- **Composer** — sólo para instalar las dependencias del daemon WebSocket (`cboden/ratchet`, `react/http`). El resto de la app sigue funcionando sin Composer.
 
 ---
 
@@ -95,11 +99,39 @@ define('BASE_URL', '/vidrios-inventory');
 RewriteBase /vidrios-inventory/
 ```
 
-### 6. Acceder al sistema
+### 6. Instalar las dependencias del daemon WebSocket
+
+Desde la carpeta `vidrios-inventory/`:
+
+```bash
+composer install
+```
+
+Esto genera la carpeta `vendor/` con Ratchet y ReactPHP. **No hace falta** para el flujo de catálogo/ventas básico: si decides desactivar el tiempo real, pon `REALTIME_ENABLED` en `false` dentro de [`config/realtime.php`](vidrios-inventory/config/realtime.php) y los `publish()` se vuelven no-op.
+
+### 7. Arrancar el daemon WebSocket
+
+En una **consola dedicada** (déjala abierta mientras el sistema esté en uso):
+
+```bash
+php bin/ws-server.php
+```
+
+Verás:
+
+```
+[Vitralia WS] WebSocket escuchando en 0.0.0.0:8080 · push interno en 127.0.0.1:8081 · PID=12345
+```
+
+Detalles, troubleshooting y servicio en producción → sección [Sincronización en tiempo real (WebSocket)](#sincronización-en-tiempo-real-websocket) más abajo.
+
+### 8. Acceder al sistema
 
 ```
 http://localhost/<ruta>/vidrios-inventory/public
 ```
+
+Si todo está OK, en la barra superior aparecerá un indicador verde **● live** mostrando que el navegador está conectado al daemon WS.
 
 ---
 
@@ -110,27 +142,34 @@ vidrios-inventory/
 ├── app/
 │   ├── controllers/     # Un controlador por módulo
 │   ├── models/          # Un modelo por entidad
+│   ├── realtime/        # Hub WebSocket (Vitralia\Realtime — namespaced, autoload PSR-4)
 │   └── views/           # Vistas PHP puras organizadas por módulo
 │       └── layouts/     # header, sidebar y footer compartidos
+├── bin/
+│   └── ws-server.php    # Daemon WebSocket (PHP CLI) — arranca Ratchet + bridge HTTP
 ├── config/
 │   ├── config.php       # Constantes globales (BASE_URL, DEBUG, etc.)
-│   └── database.php     # Credenciales de conexión
+│   ├── database.php     # Credenciales de conexión
+│   └── realtime.php     # Puertos, URL pública del WS y secreto del bridge
 ├── core/
 │   ├── Controller.php   # Clase base abstracta para controladores
 │   ├── Database.php     # Singleton PDO
 │   ├── Exporter.php     # Generador de archivos CSV
 │   ├── Model.php        # Clase base para modelos
 │   ├── Paginator.php    # Paginación reutilizable
+│   ├── Realtime.php     # Cliente PHP que publica eventos al daemon WS
 │   └── Router.php       # Enrutador URL → Controlador@acción
 ├── database/
 │   ├── schema.sql       # Schema completo con datos semilla
 │   ├── install.php      # Script para crear el usuario admin
 │   └── migrations/      # Scripts adicionales de base de datos
-└── public/
-    ├── index.php        # Front-controller (punto de entrada único)
-    ├── css/
-    ├── js/
-    └── img/
+├── public/
+│   ├── index.php        # Front-controller (punto de entrada único)
+│   ├── css/             # custom.css + realtime.css
+│   ├── js/              # app.js + realtime.js (cliente WebSocket del navegador)
+│   └── img/
+├── composer.json        # Sólo para el daemon: Ratchet + ReactPHP
+└── vendor/              # Generado por `composer install`
 ```
 
 ---
@@ -401,6 +440,269 @@ El navegador recibe el HTML del catálogo actualizado con la nueva tarjeta visib
 - **Cambios localizados**: si cambia una regla de stock, modificas un modelo. Si cambia un texto, modificas una vista. Si cambia una ruta, modificas un controlador.
 - **Trazabilidad**: el `audit()` registra cada operación; la sesión registra el usuario; las transacciones agrupan operaciones críticas.
 - **Seguridad por capas**: `.htaccess` bloquea acceso directo a internals; los controladores filtran con `requireAuth/requireAdmin`; los modelos usan prepared statements; las contraseñas pasan por bcrypt.
+
+---
+
+## Sincronización en tiempo real (WebSocket)
+
+Hasta aquí MVC describe **una sola petición** de un solo usuario. ¿Qué pasa cuando dos personas están conectadas al sistema y una de ellas cambia el stock?
+
+> **El caso de uso real**: en el taller hay un vendedor en mostrador y un encargado de inventario en el almacén. El vendedor cobra una **plancha de vidrio templado 6 mm** y descuenta 1 lámina del stock. **El encargado de inventario tiene que enterarse al instante** para que no entregue esa misma lámina a otra persona ni la cuente como disponible.
+>
+> Sin tiempo real, el inventario sólo se entera cuando recarga manualmente la pantalla — abre ventana de 5–30 segundos donde dos cabezas creen tener el mismo stock disponible. **Con tiempo real, esa ventana desaparece**: en cuanto el vendedor confirma la venta, al encargado de inventario le aparece un toast en su pantalla con "Venta · Plancha vidrio templado 6mm · −1 lámina · stock 17 · por Alex" y la fila del producto en su catálogo parpadea en ámbar señalando que acaba de cambiar.
+
+Esta sección explica cómo está hecho.
+
+### Tres procesos cooperando
+
+Antes del realtime existían **dos** procesos: tu navegador y Apache+PHP. Ahora hay **tres**:
+
+```
+┌────────────────────┐                          ┌────────────────────┐
+│  Navegador VENDED. │                          │  Navegador INVENT. │
+└─────────┬──────────┘                          └─────────▲──────────┘
+          │ 1. POST /movimiento/registrarVenta            │ 4. push WS (broadcast)
+          ▼                                               │
+┌────────────────────┐                          ┌────────┴───────────┐
+│   Apache + PHP     │   2. INSERT + UPDATE     │  Daemon Ratchet    │
+│   (request del     │  ─────────────────────►  │  (proceso PHP CLI  │
+│    vendedor)       │     MySQL                │  largo, siempre    │
+│                    │                          │  vivo)             │
+│                    │   3. POST /push          │                    │
+│                    │  ─────────────────────►  │  WS público :8080  │
+│                    │   localhost:8081         │  Push HTTP :8081   │
+└────────────────────┘                          └────────────────────┘
+```
+
+- (1) El vendedor hace el POST de venta. Apache lo procesa como siempre.
+- (2) El controlador descuenta stock en MySQL dentro de la transacción habitual.
+- (3) **Después del commit**, el controlador hace un `POST /push` a `127.0.0.1:8081` (el bridge HTTP interno del daemon) con el JSON `{event: "stock_changed", data: {producto_id, stock_nuevo, …}}`. Si el daemon está caído el POST falla con timeout corto y el request del usuario continúa normal (degradación elegante).
+- (4) El daemon **difunde ese JSON por WebSocket** a todos los navegadores conectados (incluido el del encargado de inventario). El JavaScript del cliente recibe el mensaje, muestra el toast y marca la fila como obsoleta.
+
+### Por qué WebSocket y no AJAX polling
+
+El polling (cada cliente hace `fetch` cada N segundos) funciona pero:
+- Multiplica las consultas: 10 usuarios × cada 5 s = 120 consultas/minuto sólo para "ver si algo cambió".
+- Tiene **delay** estructural igual al intervalo de poll: si pones 5 s, el peor caso es 5 s de retraso.
+- Cuesta **siempre lo mismo** aunque no haya cambios.
+
+WebSocket es lo opuesto:
+- Una sola conexión TCP por cliente, que se mantiene abierta.
+- **Cero tráfico** cuando no hay cambios.
+- **Latencia ≈ red local** (típicamente <50 ms) entre el commit del vendedor y el toast del inventario.
+
+### El daemon — qué es y por qué necesitamos un proceso aparte
+
+Apache+PHP no puede servir WebSockets de forma natural porque su modelo es **un proceso por request**: cuando termina la respuesta, el proceso muere y no puede recordar a quién tenía conectado. WebSocket exige un proceso **largo** que mantenga abiertas las conexiones de todos los usuarios.
+
+[`bin/ws-server.php`](vidrios-inventory/bin/ws-server.php) es ese proceso. Es un script PHP CLI que arranca un único **event loop** de ReactPHP y monta encima **dos sockets**:
+
+| Socket | Puerto | Quién habla aquí | Para qué |
+|---|---|---|---|
+| **WebSocket público** | `0.0.0.0:8080` | Los navegadores de los usuarios | Reciben los eventos de cambio de stock en vivo |
+| **HTTP interno** | `127.0.0.1:8081` | Los procesos PHP de Apache | Cada controlador empuja sus eventos por aquí después de hacer commit |
+
+Ambos sockets viven en el **mismo event loop**, así que es un único proceso PHP corriendo. No hay base de datos en el daemon; sólo retransmite mensajes — lo más simple y rápido posible.
+
+### Los archivos involucrados
+
+| Archivo | Rol |
+|---|---|
+| [`composer.json`](vidrios-inventory/composer.json) | Declara las dependencias `cboden/ratchet` y `react/http` y mapea el namespace `Vitralia\Realtime\` a `app/realtime/`. |
+| [`config/realtime.php`](vidrios-inventory/config/realtime.php) | Define los puertos, la URL WS pública, el secreto compartido y el switch `REALTIME_ENABLED`. |
+| [`bin/ws-server.php`](vidrios-inventory/bin/ws-server.php) | Entry point del daemon: levanta los dos sockets y arranca el loop. |
+| [`app/realtime/InventoryHub.php`](vidrios-inventory/app/realtime/InventoryHub.php) | Hub Ratchet (`MessageComponentInterface`). Mantiene la lista de clientes conectados y hace `broadcast()` cuando llega un push. Ignora mensajes entrantes de los clientes (son pasivos por diseño). |
+| [`core/Realtime.php`](vidrios-inventory/core/Realtime.php) | Cliente PHP que los controladores usan para publicar eventos. `Realtime::publishStockChange($productoId, [...])` consulta el stock actual y empuja el JSON al bridge HTTP interno con timeout corto. |
+| [`public/js/realtime.js`](vidrios-inventory/public/js/realtime.js) | Cliente del navegador: lee `<meta name="realtime-ws">`, conecta al WS, muestra toasts, marca filas obsoletas, reconecta cada 3 s si pierde la conexión. |
+| [`public/css/realtime.css`](vidrios-inventory/public/css/realtime.css) | Estilos para los toasts y para el indicador verde **● live** en el topbar. |
+
+### Dónde dispara `publish()` cada controlador
+
+| Controlador | Acción | Evento | Cuándo |
+|---|---|---|---|
+| `MovimientoController::registrarEntrada()` | Entrada manual de stock | `stock_changed` (`tipo: entrada`) | Tras la llamada exitosa a `Movimiento::registrar()` |
+| `MovimientoController::procesarSalida()` | Venta, accidente, merma | `stock_changed` (`tipo: salida`, `motivo: venta|accidente|merma`) | Tras `$db->commit()` |
+| `ProductoController::ajustarStock()` | Ajuste manual | `stock_changed` (`tipo: ajuste`) | Tras `Movimiento::registrar()` |
+| `EncargoController::crear()` | Reserva con descuento | un `stock_changed` por producto del encargo | Tras `$encargos->crearConItems()` |
+| `EncargoController::editar()` | Edición de encargo | un evento por producto afectado | Tras `actualizarConItems()` |
+| `EncargoController::cancelar()` | Devolver stock reservado | un evento por producto restituido (`tipo: entrada`) | Tras `cancelar()` |
+| `EncargoController::entregar()` | Mermas en entrega | un evento por producto con mermas | Tras `entregar()` |
+
+**Regla clave**: el `publish()` siempre va **después del `commit()`**. Si lo pusiéramos dentro de la transacción, un rollback dejaría a los demás usuarios viendo un cambio que en realidad nunca ocurrió.
+
+### El payload que viaja por la red
+
+Lo que el cliente JS recibe se ve así:
+
+```json
+{
+  "event": "stock_changed",
+  "data": {
+    "producto_id": 42,
+    "producto_codigo": "VID-00042",
+    "producto_nombre": "Plancha vidrio templado 6mm",
+    "stock_nuevo": 17,
+    "stock_minimo": 5,
+    "unidad": "lámina",
+    "stock_bajo_count": 3,
+    "tipo": "salida",
+    "motivo": "venta",
+    "cantidad": 1,
+    "delta": -1,
+    "cliente": "Distribuidora Andina",
+    "observacion": null,
+    "usuario": "Alex E.",
+    "usuario_id": 7,
+    "usuario_rol": "operador"
+  },
+  "ts": "2026-05-16T15:42:33-05:00"
+}
+```
+
+Es **información pública del inventario**: ningún dato sensible (no van contraseñas, ni hashes, ni emails de clientes). Por eso aceptamos conexiones WS de cualquier navegador con sesión iniciada sin un protocolo de auth complejo.
+
+### Qué hace el JavaScript del cliente
+
+[`public/js/realtime.js`](vidrios-inventory/public/js/realtime.js) hace cinco cosas, todas con vanilla JS:
+
+1. **Conecta** al WS leyendo la URL desde `<meta name="realtime-ws">` (sólo emitido cuando hay sesión activa).
+2. **Indicador en el topbar**: pinta un pill **● live** verde (conectado) o gris (reconectando).
+3. **Toasts**: por cada `stock_changed` muestra una tarjeta en la esquina inferior derecha con tipo, motivo, delta (en rojo si baja, verde si sube), nombre del producto, stock nuevo y usuario que lo provocó.
+4. **Resaltado de filas obsoletas**: busca elementos con `data-producto-id="<id>"` en la página actual (las tarjetas del catálogo `/producto` y las filas del historial `/movimiento`) y les añade una clase `.rt-stale` que parpadea en ámbar 2.8 s. Así el operario sabe sin ambigüedad qué fila ya no refleja el dato real.
+5. **Actualiza el badge "Stock crítico"** del topbar: el payload incluye `stock_bajo_count` recién calculado, así que el contador no necesita esperar a la siguiente recarga.
+
+Si el daemon se cae el cliente reintenta cada 3 s sin spamear errores en consola.
+
+### Diagrama del ciclo completo — "vendedor cobra, inventario lo ve"
+
+```
+T=0     Vendedor confirma venta en /movimiento/registrarVenta
+         │
+         ▼
+T+10ms   MovimientoController::procesarSalida() ejecuta:
+           BEGIN
+             SELECT ... FOR UPDATE   ← bloquea la fila del producto
+             UPDATE productos SET stock_actual = 17
+             INSERT INTO movimientos (...)
+           COMMIT
+         │
+         ▼
+T+15ms   Realtime::publishStockChange(42, ['tipo'=>'salida', ...])
+           ↓
+           SELECT codigo, nombre, stock_actual FROM productos WHERE id=42
+           SELECT COUNT(*) FROM productos WHERE stock_actual <= stock_minimo
+           ↓
+           stream_socket_client → 127.0.0.1:8081 (POST /push, 250ms timeout)
+         │
+         ▼
+T+18ms   Daemon Ratchet recibe el POST, valida X-Realtime-Secret,
+         llama a InventoryHub::broadcast($payload)
+         │
+         ▼
+T+20ms   Loop sobre SplObjectStorage de conexiones,
+         envía el frame WS a cada cliente conectado
+         │
+         ▼
+T+25ms   Navegador del encargado de inventario recibe el frame.
+         realtime.js parsea el JSON, dispara handleStockChange():
+           - Toast: "Venta · Plancha vidrio templado 6mm · −1 lámina · stock 17 · por Alex"
+           - Marca la fila/tarjeta con data-producto-id="42" como .rt-stale (ámbar)
+           - Actualiza el badge "Stock crítico" del topbar
+         │
+         ▼
+T+35ms   Vendedor recibe redirect HTTP 302 → /movimiento/historial?motivo=venta
+         (su request termina como antes)
+```
+
+**Latencia total observada** (LAN local): ~25–50 ms entre commit y toast en pantalla.
+
+### Modos de despliegue del daemon
+
+| Modo | Cómo se ejecuta | Cuándo usarlo |
+|---|---|---|
+| **Manual (dev)** | `php bin/ws-server.php` en una consola | Mientras desarrollas: ves los logs en vivo, puedes pararlo con Ctrl+C |
+| **Servicio Windows** | Envolverlo con **NSSM** apuntando al binario PHP + script | Producción sobre Windows Server / Laragon en uso continuo |
+| **Servicio Linux** | Unit systemd `[Service] ExecStart=/usr/bin/php /var/www/.../bin/ws-server.php` con `Restart=always` | Producción Linux |
+| **Sin daemon** | Pon `REALTIME_ENABLED=false` en `config/realtime.php` | Cuando no quieres tiempo real; la app sigue funcionando con sus recargas manuales |
+
+### Seguridad
+
+- El bridge HTTP interno escucha **sólo en 127.0.0.1** — desde fuera de la máquina es inalcanzable.
+- Aún así requiere la cabecera `X-Realtime-Secret`; cambia el valor `REALTIME_PUSH_SECRET` en `config/realtime.php` antes de producción.
+- El WS público no expone datos sensibles: el payload tiene código, nombre, stock, motivo y nombre del usuario. Nada de eso pasa por encima de lo que un usuario logueado ya ve en su pantalla.
+- Los clientes WS son **pasivos**: cualquier mensaje que un navegador envíe por el socket se descarta. Así un atacante con sesión no puede inyectar eventos falsos.
+- En producción detrás de HTTPS, sirve el WS también vía TLS (`wss://`) — típicamente con un reverse proxy (nginx/Apache) reescribiendo `/ws` → `127.0.0.1:8080`.
+
+### Cómo probarlo localmente en 30 segundos
+
+1. Arranca el daemon en una consola: `php vidrios-inventory/bin/ws-server.php`
+2. Abre el sistema en **dos ventanas distintas** del navegador (o navegador + incógnito) con dos usuarios distintos. Verifica que en ambas barras aparezca el pill verde **● live**.
+3. En la ventana A, registra una venta de cualquier producto.
+4. En la ventana B, **sin tocar nada**, observa el toast aparecer abajo a la derecha y la tarjeta del producto parpadeando en ámbar — **el número del stock cambia en vivo, sin recargar**.
+
+### Eventos genéricos para todos los módulos — `entity_changed`
+
+Además de `stock_changed` (específico de movimientos), cualquier acción que llame a `$this->audit($accion, $entidad, $id, $descripcion)` dispara automáticamente un evento `entity_changed`. Como **todos los CRUD del sistema ya llaman `audit()`** (es el patrón estándar del proyecto), la cobertura es total sin tocar cada controlador.
+
+| Controlador (acción) | Entidad | Acción auditada | Lo que ve el resto de usuarios |
+|---|---|---|---|
+| `ProductoController::crear/editar/eliminar` | `producto` | `crear`, `editar`, `archivar` | Toast + **la tarjeta se actualiza en vivo** (refresh in-place) |
+| `CategoriaController::*` | `categoria` | `crear`, `editar`, `eliminar` | Toast + la card parpadea en ámbar |
+| `ProveedorController::*` | `proveedor` | `crear`, `editar`, `eliminar` | Toast + la fila parpadea en ámbar |
+| `UsuarioController::*` | `usuario` | `crear`, `editar`, `desactivar` | Toast + la fila parpadea |
+| `RolController::*` | `rol` | `editar` (permisos) | Toast + la card parpadea |
+| `RetazoController::*` | `retazo` | `crear`, `aprovechar`, `eliminar` | Toast + la fila parpadea |
+| `PedidoController::*` | `pedido` | `crear`, `pagar`, `editar` | Toast + la fila parpadea |
+| `EncargoController::*` | `encargo` | `crear`, `editar`, `entregar`, `cancelar` | Toast + la tarjeta parpadea (además del `stock_changed` por cada producto afectado) |
+
+### Cómo extender el refresh in-place a otro módulo (ejemplo en 3 pasos)
+
+Hoy sólo **producto** se refresca in-place (su tarjeta se reescribe sola con datos nuevos). Para los demás módulos sólo parpadea la fila — el usuario tiene que recargar para ver el dato actualizado. Si quieres añadir refresh in-place a otro módulo, son tres pasos:
+
+**Paso 1** — Extrae la fila/tarjeta a un partial reutilizable. Ejemplo para proveedores:
+
+Crea `app/views/proveedores/_row.php` con sólo el `<tr>` (sin el `<table>` envolvente) y pásalo el dato como `$p`. Después, en `proveedores/index.php`, reemplaza el cuerpo del `foreach` por:
+
+```php
+<?php foreach ($proveedores as $p): require __DIR__ . '/_row.php'; endforeach; ?>
+```
+
+**Paso 2** — Añade una acción `fila($id)` al controlador que devuelva sólo ese partial:
+
+```php
+public function fila(string $id = '0'): void
+{
+    $this->requireAuth();
+    $p = $this->proveedores->findById((int) $id);
+    if ($p === null) { http_response_code(404); return; }
+    header('Content-Type: text/html; charset=utf-8');
+    require ROOT . '/app/views/proveedores/_row.php';
+}
+```
+
+**Paso 3** — Registra la URL en el mapa `realtimeRefreshUrl()` de `core/Controller.php`:
+
+```php
+$map = [
+    'producto'  => '/producto/tarjeta/',
+    'proveedor' => '/proveedor/fila/',   // ← nueva línea
+];
+```
+
+Con esos tres cambios, cuando alguien edita un proveedor, el resto de usuarios ve la fila actualizándose en vivo en `/proveedor/index` sin recargar. El partial debe llevar `data-entity-id="proveedor:<id>"` para que el JS lo localice.
+
+### Atributos HTML que el cliente realtime busca
+
+El JS de [`public/js/realtime.js`](vidrios-inventory/public/js/realtime.js) localiza nodos por dos convenciones:
+
+| Atributo | Para qué |
+|---|---|
+| `data-entity-id="<entidad>:<id>"` | Forma genérica: identifica un nodo como "vista de esta entidad con este id". Usada por todos los eventos `entity_changed`. |
+| `data-<entidad>-id="<id>"` | Forma específica retrocompatible. `data-producto-id="42"` sigue funcionando para `stock_changed`. |
+| `data-realtime-refresh-url="<url>"` | Si está presente en un nodo, el JS al recibir un evento que lo afecta hace fetch de esa URL y reemplaza el `outerHTML` con la respuesta. Sin este atributo, sólo parpadea ámbar. |
+| `data-stock-display` | El JS sobreescribe el `textContent` con el nuevo stock al recibir `stock_changed`. |
+| `data-stock-alert` | El JS togglea la clase `catalog-card__stock--alert` según el stock vs `data-stock-minimo`. |
+| `data-stock-minimo="<num>"` | Umbral para reevaluar el estado crítico del producto en el cliente. |
 
 ---
 

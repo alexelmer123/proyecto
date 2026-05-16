@@ -5,6 +5,9 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
     <meta name="base-url" content="<?= htmlspecialchars(BASE_URL, ENT_QUOTES, 'UTF-8') ?>">
+    <?php if (!empty($usuario) && defined('REALTIME_ENABLED') && REALTIME_ENABLED && defined('REALTIME_WS_URL')): ?>
+    <meta name="realtime-ws" content="<?= htmlspecialchars(REALTIME_WS_URL, ENT_QUOTES, 'UTF-8') ?>">
+    <?php endif; ?>
     <meta name="theme-color" content="#0c1016" media="(prefers-color-scheme: dark)">
     <meta name="theme-color" content="#f5f1e6" media="(prefers-color-scheme: light)">
     <meta name="description" content="<?= htmlspecialchars(APP_TAGLINE, ENT_QUOTES, 'UTF-8') ?>">
@@ -34,6 +37,8 @@
 
     <?php $cssV = @filemtime(ROOT . '/public/css/custom.css') ?: time(); ?>
     <link rel="stylesheet" href="<?= BASE_URL ?>/public/css/custom.css?v=<?= $cssV ?>">
+    <?php $rtCssV = @filemtime(ROOT . '/public/css/realtime.css') ?: time(); ?>
+    <link rel="stylesheet" href="<?= BASE_URL ?>/public/css/realtime.css?v=<?= $rtCssV ?>">
 </head>
 <body>
 <?php require __DIR__ . '/_icon_sprite.php'; ?>

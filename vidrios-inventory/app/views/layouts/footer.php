@@ -8,5 +8,9 @@
 
 <?php $jsV = @filemtime(ROOT . '/public/js/app.js') ?: time(); ?>
 <script src="<?= BASE_URL ?>/public/js/app.js?v=<?= $jsV ?>" defer></script>
+<?php if (!empty($usuario) && defined('REALTIME_ENABLED') && REALTIME_ENABLED): ?>
+    <?php $rtJsV = @filemtime(ROOT . '/public/js/realtime.js') ?: time(); ?>
+    <script src="<?= BASE_URL ?>/public/js/realtime.js?v=<?= $rtJsV ?>" defer></script>
+<?php endif; ?>
 </body>
 </html>

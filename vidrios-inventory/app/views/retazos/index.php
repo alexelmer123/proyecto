@@ -95,7 +95,7 @@ $fmtMedidas = static function (array $r) use ($h): string {
             <?php foreach ($retazos as $r):
                 $aprov  = (int) $r['aprovechado'] === 1;
             ?>
-                <tr class="table__row<?= $aprov ? ' is-muted' : '' ?>">
+                <tr class="table__row<?= $aprov ? ' is-muted' : '' ?>" data-entity-id="retazo:<?= (int) $r['id'] ?>">
                     <td class="table__td mono"><?= $h($r['created_at']) ?></td>
                     <td class="table__td">
                         <strong class="mono"><?= $h($r['producto_codigo']) ?></strong>

@@ -255,6 +255,25 @@ final class ProductoController extends Controller
         $this->render('productos/detalle', $viewData);
     }
 
+    /**
+     * Devuelve el HTML de UNA tarjeta del catálogo. Sirve al cliente realtime:
+     * cuando un evento `entity_changed` afecta a un producto visible, el JS
+     * hace fetch a /producto/tarjeta/<id> y reemplaza el outerHTML de la card
+     * sin recargar la página.
+     */
+    public function tarjeta(string $id = '0'): void
+    {
+        $this->requireAuth();
+        $id = (int) $id;
+        $p = $this->productos->findConRelaciones($id) ?? $this->productos->findById($id);
+        if ($p === null) {
+            http_response_code(404);
+            return;
+        }
+        header('Content-Type: text/html; charset=utf-8');
+        require ROOT . '/app/views/productos/_card.php';
+    }
+
     public function eliminar(string $id = '0'): void
     {
         $this->requireAuth();
@@ -287,6 +306,7 @@ final class ProductoController extends Controller
                 $this->setFlash('error', 'El nuevo stock debe ser cero o positivo.');
             } else {
                 try {
+                    $stockAnterior = (float) ($producto['stock_actual'] ?? 0);
                     $movs = new Movimiento();
                     $movs->registrar(
                         productoId: $id,
@@ -296,6 +316,13 @@ final class ProductoController extends Controller
                         observacion: $obs !== '' ? $obs : 'Ajuste manual'
                     );
                     $this->audit('ajustar', 'producto', (string) $id, "Stock ajustado a {$nuevo}.");
+                    Realtime::publishStockChange($id, [
+                        'tipo'        => Movimiento::TIPO_AJUSTE,
+                        'motivo'      => null,
+                        'cantidad'    => $nuevo,
+                        'delta'       => round($nuevo - $stockAnterior, 2),
+                        'observacion' => $obs !== '' ? $obs : 'Ajuste manual',
+                    ]);
                     $this->setFlash('success', 'Stock ajustado y movimiento registrado.');
                     $this->redirect('/producto/index');
                 } catch (Throwable $e) {
