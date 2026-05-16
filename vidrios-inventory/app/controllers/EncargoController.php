@@ -182,14 +182,91 @@ final class EncargoController extends Controller
     {
         $this->requireAuth();
         $id = (int) $id;
-        try {
-            $this->encargos->entregar($id);
-            $this->audit('entregar', 'encargo', (string) $id, 'Encargo marcado como entregado.');
-            $this->setFlash('success', 'Encargo marcado como entregado.');
-        } catch (Throwable $e) {
-            $this->setFlash('error', $e->getMessage());
+        $encargo = $this->encargos->findEnriquecido($id);
+        if ($encargo === null) {
+            $this->setFlash('error', 'Encargo no encontrado.');
+            $this->redirect('/encargo/index');
         }
-        $this->redirect('/encargo/detalle/' . $id);
+        if ($encargo['estado'] !== Encargo::ESTADO_PENDIENTE) {
+            $this->setFlash('error', 'Sólo se puede entregar un encargo pendiente.');
+            $this->redirect('/encargo/detalle/' . $id);
+        }
+
+        $items   = $this->encargos->itemsDe($id);
+        $errores = [];
+
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            try {
+                $this->encargos->entregar(
+                    $id,
+                    (int) $_SESSION['usuario']['id'],
+                    $this->normalizarMermasEntrega($_POST['mermas'] ?? [])
+                );
+                $this->audit('entregar', 'encargo', (string) $id, 'Encargo marcado como entregado.');
+                $this->setFlash('success', 'Encargo marcado como entregado.');
+                if ($this->isAjax()) {
+                    http_response_code(200);
+                    echo 'ok';
+                    return;
+                }
+                $this->redirect('/encargo/detalle/' . $id);
+            } catch (Throwable $e) {
+                $errores['general'] = $e->getMessage();
+            }
+        }
+
+        $viewData = [
+            'encargo'  => $encargo,
+            'items'    => $items,
+            'errores'  => $errores,
+            'unidades' => ProductoController::UNIDADES,
+        ];
+
+        if ($this->isAjax()) {
+            $this->render('encargos/entregar', $viewData, withLayout: false);
+            return;
+        }
+        $viewData['titulo'] = "Entregar encargo {$encargo['codigo']}";
+        $this->render('encargos/entregar', $viewData);
+    }
+
+    /**
+     * Filtra las mermas posteadas al entregar. Acepta merma, accidente y
+     * retazo. Las medidas dimensionales (ancho/alto/longitud según unidad)
+     * vienen en el sub-array `medidas` y se consolidan a texto en el modelo.
+     *
+     * @param  mixed $raw
+     * @return array<int, array{producto_id:int, cantidad:float, motivo:string, medidas:array<string,float>}>
+     */
+    private function normalizarMermasEntrega(mixed $raw): array
+    {
+        if (!is_array($raw)) return [];
+        $motivos = [Movimiento::MOTIVO_MERMA, Movimiento::MOTIVO_ACCIDENTE, Movimiento::MOTIVO_RETAZO];
+        $out = [];
+        foreach ($raw as $row) {
+            if (!is_array($row)) continue;
+            $pid  = (int) ($row['producto_id'] ?? 0);
+            $cant = is_numeric($row['cantidad'] ?? null) ? (float) $row['cantidad'] : 0.0;
+            if ($pid <= 0 || $cant <= 0) continue;
+            $motivo = (string) ($row['motivo'] ?? Movimiento::MOTIVO_MERMA);
+            if (!in_array($motivo, $motivos, true)) {
+                $motivo = Movimiento::MOTIVO_MERMA;
+            }
+            $medidasRaw = is_array($row['medidas'] ?? null) ? $row['medidas'] : [];
+            $medidas = [];
+            foreach ($medidasRaw as $k => $v) {
+                if (is_numeric($v) && (float) $v > 0) {
+                    $medidas[(string) $k] = (float) $v;
+                }
+            }
+            $out[] = [
+                'producto_id' => $pid,
+                'cantidad'    => $cant,
+                'motivo'      => $motivo,
+                'medidas'     => $medidas,
+            ];
+        }
+        return $out;
     }
 
     public function cancelar(string $id = '0'): void

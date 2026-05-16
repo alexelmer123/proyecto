@@ -33,10 +33,14 @@ foreach ($items as $it) {
                data-confirm="¿Cancelar el encargo «<?= $h($encargo['codigo']) ?>»? Se devolverá el stock de los productos.">
                 <?= icon('archive', 16) ?> <span>Cancelar</span>
             </a>
-            <a href="<?= BASE_URL ?>/encargo/entregar/<?= (int) $encargo['id'] ?>" class="btn btn--primary"
-               data-confirm="¿Marcar el encargo «<?= $h($encargo['codigo']) ?>» como entregado?">
+            <button type="button" class="btn btn--primary"
+                    data-modal-src="<?= BASE_URL ?>/encargo/entregar/<?= (int) $encargo['id'] ?>"
+                    data-modal-title="Entregar encargo <?= $h($encargo['codigo']) ?>"
+                    data-modal-kicker="Encargos · Entrega"
+                    data-modal-caption="Anota mermas, accidentes o retazos generados al entregar cada producto."
+                    data-modal-size="lg">
                 <?= icon('check', 16) ?> <span>Marcar entregado</span>
-            </a>
+            </button>
         <?php endif; ?>
     </div>
 </header>
@@ -53,7 +57,7 @@ foreach ($items as $it) {
                     </li>
                 <?php endif; ?>
                 <li>
-                    <?= icon('calendar', 14) ?>
+                    <?= icon('calendar', 14, 'icon--warn') ?>
                     <span><strong>Fecha de entrega:</strong>
                         <span class="mono"><?= $encargo['fecha_entrega'] ? $h((string) $encargo['fecha_entrega']) : '—' ?></span>
                     </span>
@@ -69,6 +73,18 @@ foreach ($items as $it) {
                 <div class="encargo-detalle__notes">
                     <strong>Detalles del encargo</strong>
                     <p><?= nl2br($h($encargo['detalles'])) ?></p>
+                </div>
+            <?php endif; ?>
+            <?php if ($estado === 'entregado'): ?>
+                <div class="encargo-detalle__notes">
+                    <strong>Retazos generados</strong>
+                    <p>
+                        Los retazos guardados al entregar están en
+                        <a href="<?= BASE_URL ?>/retazo/index?origen=encargo">Retazos · filtro encargo</a>.
+                        <?php if (!empty($encargo['notas_entrega'])): ?>
+                            <br><small>Nota legado: <?= nl2br($h($encargo['notas_entrega'])) ?></small>
+                        <?php endif; ?>
+                    </p>
                 </div>
             <?php endif; ?>
         </div>

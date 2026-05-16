@@ -127,10 +127,10 @@ $motivoLabels = ['venta' => 'Venta', 'encargo' => 'Encargo', 'accidente' => 'Acc
                     <?php endif; ?>
                 </td>
                 <td class="table__td table__td--num mono">
-                    <?= $tipo === 'salida' ? '−' : ($tipo === 'entrada' ? '+' : '=') ?><?= (int) $m['cantidad'] ?>
+                    <?= $tipo === 'salida' ? '−' : ($tipo === 'entrada' ? '+' : '=') ?><?= $h(fmt_cantidad($m['cantidad'])) ?>
                 </td>
                 <td class="table__td table__td--num mono">
-                    <?= (int) $m['stock_anterior'] ?> → <strong><?= (int) $m['stock_nuevo'] ?></strong>
+                    <?= $h(fmt_cantidad($m['stock_anterior'])) ?> → <strong><?= $h(fmt_cantidad($m['stock_nuevo'])) ?></strong>
                 </td>
                 <td class="table__td"><?= $h($detalleStr) ?></td>
                 <td class="table__td"><?= $h($m['usuario_nombre'] ?? '—') ?></td>

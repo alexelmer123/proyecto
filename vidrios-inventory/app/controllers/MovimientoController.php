@@ -69,9 +69,9 @@ final class MovimientoController extends Controller
             $m['producto_nombre'],
             $m['tipo'],
             $m['motivo'] ?? '',
-            (int) $m['cantidad'],
-            (int) $m['stock_anterior'],
-            (int) $m['stock_nuevo'],
+            number_format((float) $m['cantidad'],       2, '.', ''),
+            number_format((float) $m['stock_anterior'], 2, '.', ''),
+            number_format((float) $m['stock_nuevo'],    2, '.', ''),
             $m['usuario_nombre']   ?? '',
             $m['proveedor_nombre'] ?? '',
             $m['cliente']          ?? '',
@@ -94,7 +94,7 @@ final class MovimientoController extends Controller
 
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $productoId  = (int) ($_POST['producto_id'] ?? 0);
-            $cantidad    = (int) ($_POST['cantidad']    ?? 0);
+            $cantidad    = is_numeric($_POST['cantidad'] ?? null) ? (float) $_POST['cantidad'] : 0.0;
             $proveedorId = isset($_POST['proveedor_id']) && $_POST['proveedor_id'] !== ''
                 ? (int) $_POST['proveedor_id'] : null;
             $obs = trim((string) ($_POST['observacion'] ?? ''));
@@ -108,8 +108,9 @@ final class MovimientoController extends Controller
                     observacion: $obs !== '' ? $obs : null,
                     proveedorId: $proveedorId
                 );
-                $this->audit('entrada', 'movimiento', (string) $productoId, "Entrada de {$cantidad} unidades.");
-                $this->setFlash('success', "Entrada registrada (+{$cantidad}).");
+                $cantTxt = $this->formatCantidad($cantidad);
+                $this->audit('entrada', 'movimiento', (string) $productoId, "Entrada de {$cantTxt} unidades.");
+                $this->setFlash('success', "Entrada registrada (+{$cantTxt}).");
                 $this->redirect('/movimiento/historial');
             } catch (Throwable $e) {
                 $this->setFlash('error', $e->getMessage());
@@ -154,23 +155,29 @@ final class MovimientoController extends Controller
             'fecha_entrega' => '',
             'evidencia'     => '',
             'observacion'   => '',
+            'mermas'        => [],
         ];
 
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $form = [
                 'producto_id'   => (int) ($_POST['producto_id'] ?? 0),
-                'cantidad'      => (int) ($_POST['cantidad']    ?? 0),
+                'cantidad'      => is_numeric($_POST['cantidad'] ?? null) ? (float) $_POST['cantidad'] : 0.0,
                 'cliente'       => trim((string) ($_POST['cliente']      ?? '')),
                 'total'         => trim((string) ($_POST['total']        ?? '')),
                 'fecha_entrega' => trim((string) ($_POST['fecha_entrega'] ?? '')),
                 'evidencia'     => trim((string) ($_POST['evidencia']    ?? '')),
                 'observacion'   => trim((string) ($_POST['observacion']  ?? '')),
+                'mermas'        => $this->normalizarMermasPost($_POST['mermas'] ?? []),
             ];
             $errores = $this->validarSalida($motivo, $form);
 
             if ($errores === []) {
+                $db = Database::getInstance();
                 try {
-                    $this->movimientos->registrar(
+                    $db->beginTransaction();
+
+                    // Movimiento principal de salida.
+                    $movId = $this->movimientos->registrar(
                         productoId: $form['producto_id'],
                         tipo: Movimiento::TIPO_SALIDA,
                         cantidad: $form['cantidad'],
@@ -183,11 +190,53 @@ final class MovimientoController extends Controller
                         fechaEntrega: $form['fecha_entrega'] !== '' ? $form['fecha_entrega'] : null,
                         evidencia: $form['evidencia'] !== '' ? $form['evidencia'] : null,
                     );
-                    $this->audit('salida', 'movimiento', (string) $form['producto_id'],
-                        "Salida ({$motivo}) de {$form['cantidad']} unidades.");
-                    $this->setFlash('success', $this->mensajeExito($motivo, $form['cantidad']));
+
+                    // Mermas/accidentes: cada fila se registra como salida adicional
+                    // ligada al producto. Los retazos se persisten en la tabla
+                    // `retazos` (no descuentan stock).
+                    $mermasRegistradas = 0.0;
+                    $retazosCount      = 0;
+                    $retazoModel = new Retazo();
+                    foreach ($form['mermas'] as $m) {
+                        if ($m['motivo'] === Movimiento::MOTIVO_RETAZO) {
+                            $retazoModel->registrar(
+                                productoId: $form['producto_id'],
+                                cantidad: (float) $m['cantidad'],
+                                medidas: [], // sin medidas dimensionales desde salida (V1)
+                                origen: Retazo::ORIGEN_SALIDA,
+                                origenId: $movId,
+                                observacion: $m['observacion'] !== '' ? $m['observacion'] : null,
+                                usuarioId: (int) $_SESSION['usuario']['id'],
+                            );
+                            $retazosCount++;
+                            continue;
+                        }
+                        $this->movimientos->registrar(
+                            productoId: $form['producto_id'],
+                            tipo: Movimiento::TIPO_SALIDA,
+                            cantidad: (float) $m['cantidad'],
+                            usuarioId: (int) $_SESSION['usuario']['id'],
+                            observacion: $m['observacion'] !== '' ? $m['observacion'] : null,
+                            proveedorId: null,
+                            motivo: $m['motivo'],
+                        );
+                        $mermasRegistradas += (float) $m['cantidad'];
+                    }
+
+                    $db->commit();
+
+                    $cantTxt  = $this->formatCantidad($form['cantidad']);
+                    $mermaTxt = $this->formatCantidad($mermasRegistradas);
+                    $detalleAudit = "Salida ({$motivo}) de {$cantTxt}"
+                        . ($mermasRegistradas > 0 ? " + {$mermaTxt} en mermas." : '.')
+                        . ($retazosCount > 0 ? " {$retazosCount} retazo(s) guardados." : '');
+                    $this->audit('salida', 'movimiento', (string) $form['producto_id'], $detalleAudit);
+                    $this->setFlash('success', $this->mensajeExito($motivo, $form['cantidad'], $mermasRegistradas, $retazosCount));
                     $this->redirect('/movimiento/historial?motivo=' . $motivo);
                 } catch (Throwable $e) {
+                    if ($db->inTransaction()) {
+                        $db->rollBack();
+                    }
                     $errores['general'] = $e->getMessage();
                 }
             }
@@ -209,7 +258,7 @@ final class MovimientoController extends Controller
         if ((int) $f['producto_id'] <= 0) {
             $err['producto_id'] = 'Selecciona un producto.';
         }
-        if ((int) $f['cantidad'] <= 0) {
+        if ((float) $f['cantidad'] <= 0) {
             $err['cantidad'] = 'La cantidad debe ser mayor a cero.';
         }
         // Validaciones específicas por motivo
@@ -234,6 +283,51 @@ final class MovimientoController extends Controller
         return $err;
     }
 
+    /**
+     * Filtra y normaliza el arreglo `mermas[]` posteado. Descarta filas vacías
+     * (cantidad 0 o vacía) y deja únicamente cantidades positivas con motivo
+     * válido. Los motivos aceptados son: merma, accidente y retazo. Los retazos
+     * NO descuentan stock (se procesan aparte en procesarSalida).
+     *
+     * @param  mixed $raw
+     * @return array<int, array{cantidad:float, motivo:string, observacion:string}>
+     */
+    private function normalizarMermasPost(mixed $raw): array
+    {
+        if (!is_array($raw)) {
+            return [];
+        }
+        $motivosValidos = [
+            Movimiento::MOTIVO_MERMA,
+            Movimiento::MOTIVO_ACCIDENTE,
+            Movimiento::MOTIVO_RETAZO,
+        ];
+        $out = [];
+        foreach ($raw as $fila) {
+            if (!is_array($fila)) continue;
+            $cant = is_numeric($fila['cantidad'] ?? null) ? (float) $fila['cantidad'] : 0.0;
+            if ($cant <= 0) continue;
+            $motivo = (string) ($fila['motivo'] ?? Movimiento::MOTIVO_MERMA);
+            if (!in_array($motivo, $motivosValidos, true)) {
+                $motivo = Movimiento::MOTIVO_MERMA;
+            }
+            $out[] = [
+                'cantidad'    => $cant,
+                'motivo'      => $motivo,
+                'observacion' => trim((string) ($fila['observacion'] ?? '')),
+            ];
+        }
+        return $out;
+    }
+
+    /** Formatea cantidades: 18 → "18"; 1.5 → "1.50". */
+    private function formatCantidad(float $n): string
+    {
+        return fmod($n, 1.0) === 0.0
+            ? (string) (int) $n
+            : number_format($n, 2, '.', '');
+    }
+
     private function tituloSalida(string $motivo): string
     {
         return match ($motivo) {
@@ -245,7 +339,7 @@ final class MovimientoController extends Controller
         };
     }
 
-    private function mensajeExito(string $motivo, int $cantidad): string
+    private function mensajeExito(string $motivo, float $cantidad, float $mermas = 0.0, int $retazos = 0): string
     {
         $verbo = match ($motivo) {
             Movimiento::MOTIVO_VENTA     => 'Venta registrada',
@@ -254,6 +348,13 @@ final class MovimientoController extends Controller
             Movimiento::MOTIVO_MERMA     => 'Merma registrada',
             default                       => 'Salida registrada',
         };
-        return "{$verbo} (-{$cantidad} de stock).";
+        $msg = "{$verbo} (-{$this->formatCantidad($cantidad)} de stock)";
+        if ($mermas > 0) {
+            $msg .= ' + ' . $this->formatCantidad($mermas) . ' en mermas';
+        }
+        if ($retazos > 0) {
+            $msg .= " · {$retazos} retazo" . ($retazos > 1 ? 's' : '') . ' anotado' . ($retazos > 1 ? 's' : '');
+        }
+        return $msg . '.';
     }
 }

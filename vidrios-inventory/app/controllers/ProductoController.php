@@ -7,6 +7,66 @@ final class ProductoController extends Controller
     private Categoria $categorias;
     private Proveedor $proveedores;
 
+    /**
+     * Catálogo de unidades de medida y los campos dimensionales que aplican
+     * a cada una. El value es lo que se persiste en `productos.unidad`.
+     * Mantener sincronizado con app.js (initProductoUnidadFields lee este
+     * mismo mapa serializado en el form).
+     */
+    /**
+     * Catálogo extendido de unidades:
+     *  - dims:           campos dimensionales que aplican
+     *  - paso:           step del input de cantidad (0.01 admite decimales, 1 = enteros)
+     *  - permite_mermas: si la sección "mermas/retazos" se muestra en el form de salida
+     *  - medidas_merma: pares clave→label de los inputs dimensionales del retazo/merma
+     *                    al entregar un encargo (se consolidan a texto en BD).
+     */
+    public const UNIDADES = [
+        'm²' => [
+            'label' => 'm² (metros cuadrados)',
+            'dims' => ['ancho', 'alto', 'grosor'],
+            'paso' => '0.01',
+            'permite_mermas' => true,
+            'medidas_merma' => [
+                ['key' => 'ancho', 'label' => 'Ancho del retazo (cm)', 'placeholder' => 'Ej. 20'],
+                ['key' => 'alto',  'label' => 'Alto del retazo (cm)',  'placeholder' => 'Ej. 30'],
+            ],
+        ],
+        'lámina' => [
+            'label' => 'Lámina',
+            'dims' => ['ancho', 'alto', 'grosor'],
+            'paso' => '1',
+            'permite_mermas' => true,
+            'medidas_merma' => [
+                ['key' => 'ancho', 'label' => 'Ancho del retazo (cm)', 'placeholder' => 'Ej. 50'],
+                ['key' => 'alto',  'label' => 'Alto del retazo (cm)',  'placeholder' => 'Ej. 40'],
+            ],
+        ],
+        'unidad' => [
+            'label' => 'Unidad',
+            'dims' => [],
+            'paso' => '1',
+            'permite_mermas' => false,
+            'medidas_merma' => [],
+        ],
+        'tubo' => [
+            'label' => 'Tubo',
+            'dims' => ['longitud', 'diametro'],
+            'paso' => '1',
+            'permite_mermas' => false,
+            'medidas_merma' => [],
+        ],
+        'metro lineal' => [
+            'label' => 'Metro lineal',
+            'dims' => ['longitud'],
+            'paso' => '0.01',
+            'permite_mermas' => true,
+            'medidas_merma' => [
+                ['key' => 'longitud', 'label' => 'Longitud del retazo (cm)', 'placeholder' => 'Ej. 50'],
+            ],
+        ],
+    ];
+
     public function __construct()
     {
         $this->productos   = new Producto();
@@ -82,6 +142,7 @@ final class ProductoController extends Controller
             'errores'      => $errores,
             'categorias'   => $this->categorias->activas(),
             'proveedores'  => $this->proveedores->activos(),
+            'unidades'     => self::UNIDADES,
         ];
 
         if ($this->isAjax()) {
@@ -151,6 +212,7 @@ final class ProductoController extends Controller
             'errores'      => $errores,
             'categorias'   => $this->categorias->activas(),
             'proveedores'  => $this->proveedores->activos(),
+            'unidades'     => self::UNIDADES,
         ];
 
         if ($this->isAjax()) {
@@ -218,7 +280,8 @@ final class ProductoController extends Controller
         }
 
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-            $nuevo = (int) ($_POST['stock_nuevo'] ?? -1);
+            $nuevo = isset($_POST['stock_nuevo']) && is_numeric($_POST['stock_nuevo'])
+                ? (float) $_POST['stock_nuevo'] : -1.0;
             $obs   = trim((string) ($_POST['observacion'] ?? ''));
             if ($nuevo < 0) {
                 $this->setFlash('error', 'El nuevo stock debe ser cero o positivo.');
@@ -259,18 +322,21 @@ final class ProductoController extends Controller
             $p['categoria_nombre']  ?? '',
             $p['proveedor_nombre']  ?? '',
             $p['unidad'],
-            $p['ancho']  ?? '',
-            $p['alto']   ?? '',
-            $p['grosor'] ?? '',
+            $p['ancho']    ?? '',
+            $p['alto']     ?? '',
+            $p['grosor']   ?? '',
+            $p['longitud'] ?? '',
+            $p['diametro'] ?? '',
             number_format((float) $p['precio_compra'], 2, '.', ''),
             number_format((float) $p['precio_venta'],  2, '.', ''),
-            (int) $p['stock_actual'],
-            (int) $p['stock_minimo'],
+            fmt_cantidad($p['stock_actual']),
+            fmt_cantidad($p['stock_minimo']),
             (int) $p['estado'] === 1 ? 'Activo' : 'Inactivo',
         ], $this->productos->buscar($q, $cat));
         Exporter::csv('productos', [
             'Código', 'Nombre', 'Descripción', 'Categoría', 'Proveedor',
             'Unidad', 'Ancho (mm)', 'Alto (mm)', 'Grosor (mm)',
+            'Longitud (mm)', 'Diámetro (mm)',
             'Precio compra', 'Precio venta', 'Stock actual', 'Stock mínimo', 'Estado',
         ], $filas);
     }
@@ -286,14 +352,18 @@ final class ProductoController extends Controller
             echo json_encode(['ok' => false, 'msg' => 'No encontrado']);
             return;
         }
+        $unidad   = (string) ($producto['unidad'] ?? 'unidad');
+        $cfg      = self::UNIDADES[$unidad] ?? ['paso' => '1', 'permite_mermas' => false];
         echo json_encode([
-            'ok'           => true,
-            'id'           => (int) $producto['id'],
-            'codigo'       => $producto['codigo'],
-            'nombre'       => $producto['nombre'],
-            'stock_actual' => (int) $producto['stock_actual'],
-            'stock_minimo' => (int) $producto['stock_minimo'],
-            'unidad'       => $producto['unidad'] ?? 'u',
+            'ok'             => true,
+            'id'             => (int) $producto['id'],
+            'codigo'         => $producto['codigo'],
+            'nombre'         => $producto['nombre'],
+            'stock_actual'   => (float) $producto['stock_actual'],
+            'stock_minimo'   => (float) $producto['stock_minimo'],
+            'unidad'         => $unidad,
+            'paso'           => $cfg['paso'],
+            'permite_mermas' => (bool) $cfg['permite_mermas'],
         ]);
     }
 
@@ -311,6 +381,8 @@ final class ProductoController extends Controller
             'ancho'         => '',
             'alto'          => '',
             'grosor'        => '',
+            'longitud'      => '',
+            'diametro'      => '',
             'precio_compra' => '',
             'precio_venta'  => '',
             'stock_actual'  => 0,
@@ -321,6 +393,21 @@ final class ProductoController extends Controller
 
     private function extraerForm(array $src): array
     {
+        $unidad = trim((string) ($src['unidad'] ?? 'm²'));
+        if (!isset(self::UNIDADES[$unidad])) {
+            $unidad = 'm²';
+        }
+
+        // Solo persistimos los campos dimensionales que aplican a la unidad
+        // elegida; los demás se anulan para no dejar datos huérfanos en BD.
+        $dimsValidas = self::UNIDADES[$unidad]['dims'];
+        $extraerDim = function (string $k) use ($src, $dimsValidas): ?float {
+            if (!in_array($k, $dimsValidas, true)) {
+                return null;
+            }
+            return isset($src[$k]) && $src[$k] !== '' ? (float) $src[$k] : null;
+        };
+
         return [
             'codigo'        => trim((string) ($src['codigo']        ?? '')),
             'nombre'        => trim((string) ($src['nombre']        ?? '')),
@@ -329,14 +416,16 @@ final class ProductoController extends Controller
                                   ? (int) $src['categoria_id'] : null,
             'proveedor_id'  => isset($src['proveedor_id']) && $src['proveedor_id'] !== ''
                                   ? (int) $src['proveedor_id'] : null,
-            'unidad'        => trim((string) ($src['unidad']        ?? 'm²')),
-            'ancho'         => isset($src['ancho'])  && $src['ancho']  !== '' ? (float) $src['ancho']  : null,
-            'alto'          => isset($src['alto'])   && $src['alto']   !== '' ? (float) $src['alto']   : null,
-            'grosor'        => isset($src['grosor']) && $src['grosor'] !== '' ? (float) $src['grosor'] : null,
+            'unidad'        => $unidad,
+            'ancho'         => $extraerDim('ancho'),
+            'alto'          => $extraerDim('alto'),
+            'grosor'        => $extraerDim('grosor'),
+            'longitud'      => $extraerDim('longitud'),
+            'diametro'      => $extraerDim('diametro'),
             'precio_compra' => (float) ($src['precio_compra'] ?? 0),
             'precio_venta'  => (float) ($src['precio_venta']  ?? 0),
-            'stock_actual'  => (int)   ($src['stock_actual']  ?? 0),
-            'stock_minimo'  => (int)   ($src['stock_minimo']  ?? 1),
+            'stock_actual'  => (float) ($src['stock_actual']  ?? 0),
+            'stock_minimo'  => (float) ($src['stock_minimo']  ?? 1),
         ];
     }
 
@@ -350,6 +439,9 @@ final class ProductoController extends Controller
         if (empty($f['categoria_id'])) {
             $err['categoria_id'] = 'Selecciona una categoría.';
         }
+        if (!isset(self::UNIDADES[$f['unidad']])) {
+            $err['unidad'] = 'Selecciona una unidad válida.';
+        }
         if (!is_numeric($f['precio_compra']) || $f['precio_compra'] < 0) {
             $err['precio_compra'] = 'El precio de compra debe ser numérico y no negativo.';
         }
@@ -360,12 +452,19 @@ final class ProductoController extends Controller
             && (float) $f['precio_venta'] < (float) $f['precio_compra']) {
             $err['precio_venta'] = 'El precio de venta no puede ser menor al de compra.';
         }
-        if ((int) $f['stock_minimo'] <= 0) {
+        if ((float) $f['stock_minimo'] <= 0) {
             $err['stock_minimo'] = 'El stock mínimo debe ser mayor a cero.';
         }
-        foreach (['ancho', 'alto', 'grosor'] as $dim) {
+        $labels = [
+            'ancho'    => 'Ancho',
+            'alto'     => 'Alto',
+            'grosor'   => 'Grosor',
+            'longitud' => 'Longitud',
+            'diametro' => 'Diámetro',
+        ];
+        foreach (['ancho', 'alto', 'grosor', 'longitud', 'diametro'] as $dim) {
             if ($f[$dim] !== null && (!is_numeric($f[$dim]) || (float) $f[$dim] <= 0)) {
-                $err[$dim] = ucfirst($dim) . ' debe ser un número positivo.';
+                $err[$dim] = $labels[$dim] . ' debe ser un número positivo.';
             }
         }
         return $err;

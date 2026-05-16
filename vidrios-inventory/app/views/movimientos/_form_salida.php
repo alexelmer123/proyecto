@@ -37,9 +37,10 @@ $cfg = [
     <div id="stockInfo" class="stock-info">Selecciona un producto para ver el stock actual.</div>
 
     <label class="field">
-        <span class="field__label">Cantidad a retirar *</span>
-        <input class="field__input mono" type="number" min="1" name="cantidad" required
-               value="<?= $h((string) ($form['cantidad'] ?? 1)) ?>">
+        <span class="field__label" data-cantidad-label>Cantidad a retirar *</span>
+        <input class="field__input mono" type="number" min="1" step="1" name="cantidad" required
+               value="<?= $h((string) ($form['cantidad'] ?? 1)) ?>"
+               data-cantidad-input>
         <?= $err('cantidad') ?>
     </label>
 
@@ -96,6 +97,97 @@ $cfg = [
         <textarea class="field__input" name="observacion" rows="2"
                   placeholder="Notas adicionales, número de orden, etc."><?= $h($form['observacion'] ?? '') ?></textarea>
     </label>
+
+    <?php if (in_array($motivo, ['venta', 'accidente'], true)):
+        $mermasForm = $form['mermas'] ?? [];
+        if (!is_array($mermasForm) || $mermasForm === []) {
+            $mermasForm = [['cantidad' => '', 'motivo' => 'merma', 'observacion' => '']];
+        }
+        $motivosMerma = [
+            'merma'     => 'Merma',
+            'accidente' => 'Accidente / rotura',
+            'retazo'    => 'Retazo aprovechable (no descuenta stock)',
+        ];
+    ?>
+        <section class="mermas-section" data-mermas-wrapper hidden>
+            <header class="mermas-section__head">
+                <div>
+                    <h3 class="mermas-section__title">Mermas y retazos generados</h3>
+                    <p class="mermas-section__hint">
+                        Captura aquí lo que se perdió, rompió o quedó como retazo. Las
+                        <strong>mermas y accidentes</strong> descuentan stock extra; los
+                        <strong>retazos</strong> sólo se anotan como referencia.
+                    </p>
+                </div>
+                <button type="button" class="btn btn--ghost btn--sm" data-add-merma>+ Agregar fila</button>
+            </header>
+
+            <div class="mermas-list" data-mermas-list>
+                <?php foreach ($mermasForm as $i => $m): ?>
+                    <div class="mermas-row" data-merma-row>
+                        <label class="field">
+                            <span class="field__label">Cantidad</span>
+                            <input class="field__input mono" type="number" min="0" step="0.01"
+                                   name="mermas[<?= (int) $i ?>][cantidad]"
+                                   value="<?= $h((string) ($m['cantidad'] ?? '')) ?>"
+                                   placeholder="0"
+                                   data-merma-cantidad>
+                        </label>
+                        <label class="field">
+                            <span class="field__label">Motivo</span>
+                            <select class="field__input" name="mermas[<?= (int) $i ?>][motivo]">
+                                <?php foreach ($motivosMerma as $v => $lbl): ?>
+                                    <option value="<?= $h($v) ?>"
+                                        <?= ($m['motivo'] ?? 'merma') === $v ? 'selected' : '' ?>>
+                                        <?= $h($lbl) ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </label>
+                        <label class="field mermas-row__obs">
+                            <span class="field__label">Detalle</span>
+                            <input class="field__input" type="text"
+                                   name="mermas[<?= (int) $i ?>][observacion]"
+                                   value="<?= $h((string) ($m['observacion'] ?? '')) ?>"
+                                   placeholder="Ej. retazo 20×30, esquina rota, sobrante irregular…">
+                        </label>
+                        <button type="button" class="mermas-row__remove" data-remove-merma
+                                aria-label="Quitar fila">×</button>
+                    </div>
+                <?php endforeach; ?>
+            </div>
+
+            <template data-merma-template>
+                <div class="mermas-row" data-merma-row>
+                    <label class="field">
+                        <span class="field__label">Cantidad</span>
+                        <input class="field__input mono" type="number" min="0" step="0.01"
+                               name="mermas[__IDX__][cantidad]" placeholder="0"
+                               data-merma-cantidad>
+                    </label>
+                    <label class="field">
+                        <span class="field__label">Motivo</span>
+                        <select class="field__input" name="mermas[__IDX__][motivo]">
+                            <?php foreach ($motivosMerma as $v => $lbl): ?>
+                                <option value="<?= $h($v) ?>"><?= $h($lbl) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </label>
+                    <label class="field mermas-row__obs">
+                        <span class="field__label">Detalle</span>
+                        <input class="field__input" type="text"
+                               name="mermas[__IDX__][observacion]"
+                               placeholder="Ej. retazo 20×30, esquina rota, sobrante irregular…">
+                    </label>
+                    <button type="button" class="mermas-row__remove" data-remove-merma aria-label="Quitar fila">×</button>
+                </div>
+            </template>
+
+            <?php if (!empty($errores['mermas'])): ?>
+                <small class="field__error"><?= $h($errores['mermas']) ?></small>
+            <?php endif; ?>
+        </section>
+    <?php endif; ?>
 
     <div class="form__actions">
         <a href="<?= BASE_URL ?>/movimiento/historial" class="btn btn--ghost">Cancelar</a>

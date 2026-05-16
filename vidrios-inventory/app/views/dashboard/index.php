@@ -172,7 +172,7 @@ $netoTrendLabel  = ($netoTrendPct === 0.0)
         <span class="metric__label">Stock crítico</span>
         <span class="metric__value mono"><?= (int) $stockBajo ?></span>
         <?php if ($stockBajo > 0): ?>
-            <a class="metric__link" href="<?= BASE_URL ?>/reporte/stockBajo">Ver detalle →</a>
+            <a class="metric__link" href="<?= BASE_URL ?>/reporte/stock?criticos=1">Ver detalle →</a>
         <?php else: ?>
             <span class="metric__sub">Todo en orden ✓</span>
         <?php endif; ?>
@@ -373,20 +373,20 @@ $netoTrendLabel  = ($netoTrendPct === 0.0)
         <?php else: ?>
             <ul class="mini-list">
                 <?php foreach ($topStockBajo as $p):
-                    $rel = (int) $p['stock_minimo'] > 0
-                        ? max(0.0, min(1.0, (int) $p['stock_actual'] / (int) $p['stock_minimo']))
-                        : 0.0;
-                    $faltante = max(0, (int) $p['stock_minimo'] - (int) $p['stock_actual']);
+                    $sa  = (float) $p['stock_actual'];
+                    $smi = (float) $p['stock_minimo'];
+                    $rel = $smi > 0 ? max(0.0, min(1.0, $sa / $smi)) : 0.0;
+                    $faltante = max(0.0, $smi - $sa);
                 ?>
                     <li class="mini-list__item">
                         <div>
                             <strong class="mono"><?= $h($p['codigo']) ?></strong>
                             <span><?= $h($p['nombre']) ?></span>
-                            <small><?= $h($p['categoria_nombre'] ?? '—') ?> · faltan <?= $faltante ?></small>
+                            <small><?= $h($p['categoria_nombre'] ?? '—') ?> · faltan <?= $h(fmt_cantidad($faltante)) ?></small>
                             <div class="critical-bar"><span class="critical-bar__fill" style="width: <?= round($rel * 100) ?>%"></span></div>
                         </div>
                         <span class="stock-pill stock-pill--alert mono">
-                            <?= (int) $p['stock_actual'] ?> / <?= (int) $p['stock_minimo'] ?>
+                            <?= $h(fmt_cantidad($sa)) ?> / <?= $h(fmt_cantidad($smi)) ?>
                         </span>
                     </li>
                 <?php endforeach; ?>
@@ -429,7 +429,7 @@ $netoTrendLabel  = ($netoTrendPct === 0.0)
                         </td>
                         <td class="table__td"><span class="mov mov--<?= $h($tipo) ?>"><?= $h($tipoLabel) ?></span></td>
                         <td class="table__td table__td--num mono">
-                            <?= $tipo === 'salida' ? '−' : ($tipo === 'entrada' ? '+' : '=') ?><?= (int) $m['cantidad'] ?>
+                            <?= $tipo === 'salida' ? '−' : ($tipo === 'entrada' ? '+' : '=') ?><?= $h(fmt_cantidad($m['cantidad'])) ?>
                         </td>
                         <td class="table__td"><?= $h($m['usuario_nombre'] ?? '—') ?></td>
                     </tr>

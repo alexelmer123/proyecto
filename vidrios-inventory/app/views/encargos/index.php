@@ -54,7 +54,7 @@ $estadoLabels = ['pendiente' => 'Pendiente', 'entregado' => 'Entregado', 'cancel
                             </span>
                         <?php endif; ?>
                         <span class="encargo-card__sub-item">
-                            <?= icon('calendar', 14) ?>
+                            <?= icon('calendar', 14, 'icon--warn') ?>
                             <span class="mono"><?= $e['fecha_entrega'] ? $h((string) $e['fecha_entrega']) : 'sin fecha' ?></span>
                         </span>
                         <?php if (!empty($e['lugar_entrega'])): ?>

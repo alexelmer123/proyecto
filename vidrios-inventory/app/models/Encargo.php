@@ -242,8 +242,21 @@ final class Encargo extends BaseModel
         }
     }
 
-    /** Marca el encargo como entregado (no afecta stock — ya se descontó al crearlo). */
-    public function entregar(int $encargoId): void
+    /**
+     * Marca el encargo como entregado. El stock principal ya se descontó al
+     * crear el encargo; aquí sólo se procesan las mermas/retazos detectados
+     * al momento de entregar:
+     *   - merma/accidente → registran un movimiento de salida adicional
+     *     ligado al encargo (descuentan stock extra).
+     *   - retazo → no afecta stock, se consolida como texto en encargos.notas_entrega.
+     *
+     * Cada fila incluye `medidas` (sub-array clave→valor con las dimensiones del
+     * retazo/merma según la unidad del producto). Se consolidan como texto en
+     * la observación del movimiento (mermas/accidentes) o en notas_entrega (retazos).
+     *
+     * @param array<int, array{producto_id:int, cantidad:float, motivo:string, medidas:array<string,float>}> $mermas
+     */
+    public function entregar(int $encargoId, int $usuarioId, array $mermas = []): void
     {
         $encargo = $this->findById($encargoId);
         if ($encargo === null) {
@@ -252,7 +265,82 @@ final class Encargo extends BaseModel
         if ($encargo['estado'] !== self::ESTADO_PENDIENTE) {
             throw new RuntimeException('Sólo se puede entregar un encargo pendiente.');
         }
-        $this->update($encargoId, ['estado' => self::ESTADO_ENTREGADO]);
+
+        $usuarioIdFk = $this->resolverUsuarioId($usuarioId);
+
+        $this->db->beginTransaction();
+        try {
+            $movs    = new Movimiento();
+            $retazoModel = new Retazo();
+            $retazosCount = 0;
+
+            foreach ($mermas as $m) {
+                $pid    = (int) ($m['producto_id'] ?? 0);
+                $cant   = (float) ($m['cantidad']  ?? 0);
+                $motivo = (string) ($m['motivo']   ?? Movimiento::MOTIVO_MERMA);
+                $medidas = is_array($m['medidas'] ?? null) ? $m['medidas'] : [];
+                if ($pid <= 0 || $cant <= 0) continue;
+
+                $medidasTxt = self::formatMedidas($medidas);
+
+                if ($motivo === Movimiento::MOTIVO_RETAZO) {
+                    $retazoModel->registrar(
+                        productoId: $pid,
+                        cantidad: $cant,
+                        medidas: $medidas,
+                        origen: Retazo::ORIGEN_ENCARGO,
+                        origenId: $encargoId,
+                        observacion: null,
+                        usuarioId: $usuarioIdFk,
+                    );
+                    $retazosCount++;
+                    continue;
+                }
+                $movs->registrar(
+                    productoId: $pid,
+                    tipo: Movimiento::TIPO_SALIDA,
+                    cantidad: $cant,
+                    usuarioId: $usuarioIdFk ?? 0,
+                    observacion: 'Entrega encargo ' . $encargo['codigo']
+                        . ($medidasTxt !== '' ? ' — ' . $medidasTxt : ''),
+                    motivo: $motivo,
+                    encargoId: $encargoId,
+                );
+            }
+
+            // notas_entrega ahora se queda como nota narrativa libre (vacío en V1
+            // porque ya no consolidamos retazos aquí — viven en su tabla).
+            $upd = $this->db->prepare(
+                "UPDATE encargos
+                    SET estado = :est
+                  WHERE id = :id"
+            );
+            $upd->bindValue(':est', self::ESTADO_ENTREGADO);
+            $upd->bindValue(':id',  $encargoId, PDO::PARAM_INT);
+            $upd->execute();
+
+            $this->db->commit();
+        } catch (Throwable $e) {
+            if ($this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
+            throw $e;
+        }
+    }
+
+    /**
+     * Convierte las medidas dimensionales del retazo/merma a texto compacto:
+     *   ['ancho' => 20, 'alto' => 30] → "20×30 cm"
+     *   ['longitud' => 50]            → "50 cm"
+     *   []                            → ""
+     */
+    private static function formatMedidas(array $medidas): string
+    {
+        if ($medidas === []) return '';
+        $valores = array_map(static function ($v) {
+            return rtrim(rtrim(number_format((float) $v, 2, '.', ''), '0'), '.');
+        }, $medidas);
+        return implode('×', $valores) . ' cm';
     }
 
     /** Listado paginado con conteo de items y total. */

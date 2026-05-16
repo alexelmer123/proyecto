@@ -132,4 +132,61 @@ final class Producto extends BaseModel
                 ORDER BY valor_total DESC";
         return $this->db->query($sql)->fetchAll();
     }
+
+    /**
+     * Reporte unificado de stock: combina stock actual, mínimos y valorización
+     * (stock × precio_compra) con filtros opcionales.
+     */
+    public function stockReporte(bool $soloCriticos = false, ?int $categoriaId = null, ?int $proveedorId = null): array
+    {
+        $sql = "SELECT p.id, p.codigo, p.nombre,
+                       p.stock_actual, p.stock_minimo,
+                       p.precio_compra, p.precio_venta,
+                       (p.stock_actual * p.precio_compra) AS valor_total,
+                       GREATEST(p.stock_minimo - p.stock_actual, 0) AS faltante,
+                       (p.stock_actual <= p.stock_minimo) AS es_critico,
+                       c.nombre  AS categoria_nombre,
+                       pr.nombre AS proveedor_nombre
+                FROM `{$this->table}` p
+                LEFT JOIN categorias  c  ON c.id  = p.categoria_id
+                LEFT JOIN proveedores pr ON pr.id = p.proveedor_id
+                WHERE p.estado = 1";
+        $params = [];
+        if ($soloCriticos) {
+            $sql .= " AND p.stock_actual <= p.stock_minimo";
+        }
+        if ($categoriaId !== null && $categoriaId > 0) {
+            $sql .= " AND p.categoria_id = :cat";
+            $params[':cat'] = $categoriaId;
+        }
+        if ($proveedorId !== null && $proveedorId > 0) {
+            $sql .= " AND p.proveedor_id = :prov";
+            $params[':prov'] = $proveedorId;
+        }
+        $sql .= " ORDER BY es_critico DESC, (p.stock_actual / NULLIF(p.stock_minimo,0)) ASC, valor_total DESC";
+
+        $stmt = $this->db->prepare($sql);
+        foreach ($params as $k => $v) {
+            $stmt->bindValue($k, $v, $this->pdoType($v));
+        }
+        $stmt->execute();
+        return $stmt->fetchAll();
+    }
+
+    /** Productos suministrados por un proveedor (para el modal del consolidado). */
+    public function porProveedor(int $proveedorId): array
+    {
+        $sql = "SELECT p.id, p.codigo, p.nombre,
+                       p.stock_actual, p.stock_minimo,
+                       p.precio_compra,
+                       (p.stock_actual * p.precio_compra) AS valor_total,
+                       c.nombre AS categoria_nombre
+                FROM `{$this->table}` p
+                LEFT JOIN categorias c ON c.id = p.categoria_id
+                WHERE p.estado = 1 AND p.proveedor_id = :pid
+                ORDER BY p.nombre ASC";
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute([':pid' => $proveedorId]);
+        return $stmt->fetchAll();
+    }
 }

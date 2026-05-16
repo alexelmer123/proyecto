@@ -19,7 +19,7 @@ $groupOpen = static function (array $needles) use ($activo): bool {
             <span class="sidebar__label">Tablero</span>
         </a>
 
-        <details class="sidebar__group"<?= $groupOpen(['/producto', '/categoria', '/proveedor']) ? ' open' : '' ?>>
+        <details class="sidebar__group"<?= $groupOpen(['/producto', '/categoria', '/proveedor', '/retazo']) ? ' open' : '' ?>>
             <summary class="sidebar__section sidebar__section--toggle">
                 <span class="sidebar__section-label">Inventario</span>
                 <span class="sidebar__caret" aria-hidden="true"><?= icon('chevron-down', 14) ?></span>
@@ -35,6 +35,10 @@ $groupOpen = static function (array $needles) use ($activo): bool {
             <a class="sidebar__link<?= $is('/proveedor') ?>" href="<?= BASE_URL ?>/proveedor/index">
                 <span class="sidebar__icon" aria-hidden="true"><?= icon('truck', 18) ?></span>
                 <span class="sidebar__label">Proveedores</span>
+            </a>
+            <a class="sidebar__link<?= $is('/retazo') ?>" href="<?= BASE_URL ?>/retazo/index">
+                <span class="sidebar__icon" aria-hidden="true"><?= icon('archive', 18) ?></span>
+                <span class="sidebar__label">Retazos</span>
             </a>
         </details>
 
@@ -85,17 +89,13 @@ $groupOpen = static function (array $needles) use ($activo): bool {
                 <span class="sidebar__icon" aria-hidden="true"><?= icon('clock', 18) ?></span>
                 <span class="sidebar__label">Historial</span>
             </a>
-            <a class="sidebar__link<?= $is('/reporte/stockbajo') ?>" href="<?= BASE_URL ?>/reporte/stockBajo">
-                <span class="sidebar__icon sidebar__icon--alert" aria-hidden="true"><?= icon('alert', 18) ?></span>
-                <span class="sidebar__label">Stock crítico</span>
-            </a>
-            <a class="sidebar__link<?= $is('/reporte/valorinventario') ?>" href="<?= BASE_URL ?>/reporte/valorInventario">
+            <a class="sidebar__link<?= $is('/reporte/stock') ?>" href="<?= BASE_URL ?>/reporte/stock">
                 <span class="sidebar__icon" aria-hidden="true"><?= icon('chart', 18) ?></span>
-                <span class="sidebar__label">Valor inventario</span>
+                <span class="sidebar__label">Stock</span>
             </a>
-            <a class="sidebar__link<?= $is('/reporte/movimientosporperiodo') ?>" href="<?= BASE_URL ?>/reporte/movimientosPorPeriodo">
-                <span class="sidebar__icon" aria-hidden="true"><?= icon('trending-up', 18) ?></span>
-                <span class="sidebar__label">Por período</span>
+            <a class="sidebar__link<?= $is('/reporte/mermas') ?>" href="<?= BASE_URL ?>/reporte/mermas">
+                <span class="sidebar__icon sidebar__icon--alert" aria-hidden="true"><?= icon('alert', 18) ?></span>
+                <span class="sidebar__label">Mermas y accidentes</span>
             </a>
             <a class="sidebar__link<?= $is('/reporte/ventas') ?>" href="<?= BASE_URL ?>/reporte/ventas">
                 <span class="sidebar__icon" aria-hidden="true"><?= icon('tag', 18) ?></span>

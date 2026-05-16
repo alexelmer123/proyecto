@@ -67,7 +67,7 @@
             </span>
         </button>
         <?php if ($usuario): ?>
-            <a href="<?= BASE_URL ?>/reporte/stockBajo" class="badge badge--alert" id="badgeStockBajo"
+            <a href="<?= BASE_URL ?>/reporte/stock?criticos=1" class="badge badge--alert" id="badgeStockBajo"
                title="Productos con stock crítico">
                 <?= icon('alert', 14) ?>
                 <span class="badge__label">Stock crítico</span>

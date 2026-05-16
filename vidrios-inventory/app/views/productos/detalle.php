@@ -2,17 +2,28 @@
 /** @var array $producto */
 $h = static fn(?string $s): string => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
 
-$bajo       = (int) $producto['stock_actual'] <= (int) $producto['stock_minimo'];
+$bajo       = (float) $producto['stock_actual'] <= (float) $producto['stock_minimo'];
 $margen     = ((float) $producto['precio_venta']) - ((float) $producto['precio_compra']);
 $margenPct  = (float) $producto['precio_compra'] > 0
     ? ($margen / (float) $producto['precio_compra']) * 100
     : null;
 $id         = (int) $producto['id'];
 
+// Solo mostramos los campos dimensionales que aplican a la unidad guardada
+// (m²/lámina → ancho×alto×grosor; tubo → longitud×diámetro; metro lineal →
+// longitud; unidad/kit → sin dimensiones). Si un producto tiene una unidad
+// "legado" (p. ej. la 'u' del seed), caemos al comportamiento previo.
+$dimsPorUnidad = ProductoController::UNIDADES;
+$unidadProducto = (string) ($producto['unidad'] ?? '');
+$camposDim = $dimsPorUnidad[$unidadProducto]['dims'] ?? ['ancho', 'alto', 'grosor', 'longitud', 'diametro'];
+
+$fmt = static fn(float $v): string => rtrim(rtrim(number_format($v, 2, '.', ''), '0'), '.') . ' mm';
 $dim = [];
-if (!empty($producto['ancho']))  $dim[] = rtrim(rtrim(number_format((float) $producto['ancho'],  2, '.', ''), '0'), '.') . ' mm';
-if (!empty($producto['alto']))   $dim[] = rtrim(rtrim(number_format((float) $producto['alto'],   2, '.', ''), '0'), '.') . ' mm';
-if (!empty($producto['grosor'])) $dim[] = rtrim(rtrim(number_format((float) $producto['grosor'], 2, '.', ''), '0'), '.') . ' mm';
+foreach ($camposDim as $campo) {
+    if (!empty($producto[$campo])) {
+        $dim[] = $fmt((float) $producto[$campo]);
+    }
+}
 $dimensiones = $dim ? implode(' × ', $dim) : '—';
 ?>
 <div class="producto-detalle">
@@ -77,8 +88,8 @@ $dimensiones = $dim ? implode(' × ', $dim) : '—';
         <div class="producto-detalle__metric">
             <span class="producto-detalle__metric-label">Stock</span>
             <span class="stock-pill <?= $bajo ? 'stock-pill--alert' : 'stock-pill--ok' ?>">
-                <strong><?= (int) $producto['stock_actual'] ?></strong>
-                <span class="stock-pill__min">mín. <?= (int) $producto['stock_minimo'] ?></span>
+                <strong><?= $h(fmt_cantidad($producto['stock_actual'])) ?></strong>
+                <span class="stock-pill__min">mín. <?= $h(fmt_cantidad($producto['stock_minimo'])) ?></span>
             </span>
         </div>
     </div>

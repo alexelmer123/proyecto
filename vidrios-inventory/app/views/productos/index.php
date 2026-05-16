@@ -56,7 +56,7 @@ $h = static fn(?string $s): string => htmlspecialchars((string) $s, ENT_QUOTES, 
 <?php else: ?>
     <section class="catalog-grid">
         <?php foreach ($productos as $p):
-            $bajo = (int) $p['stock_actual'] <= (int) $p['stock_minimo'];
+            $bajo = (float) $p['stock_actual'] <= (float) $p['stock_minimo'];
         ?>
             <article class="catalog-card<?= $bajo ? ' is-critical' : '' ?>">
                 <button type="button"
@@ -99,7 +99,7 @@ $h = static fn(?string $s): string => htmlspecialchars((string) $s, ENT_QUOTES, 
                     </p>
                     <span class="catalog-card__stock <?= $bajo ? 'catalog-card__stock--alert' : '' ?>">
                         <?= icon('package', 14) ?>
-                        Stock: <strong><?= (int) $p['stock_actual'] ?></strong>
+                        Stock: <strong><?= $h(fmt_cantidad($p['stock_actual'])) ?></strong>
                     </span>
                 </div>
             </article>

@@ -72,10 +72,12 @@ CREATE TABLE IF NOT EXISTS `productos` (
     `ancho`         DECIMAL(10,2)  NULL,
     `alto`          DECIMAL(10,2)  NULL,
     `grosor`        DECIMAL(10,2)  NULL,
+    `longitud`      DECIMAL(10,2)  NULL,
+    `diametro`      DECIMAL(10,2)  NULL,
     `precio_compra` DECIMAL(12,2)  NOT NULL DEFAULT 0,
     `precio_venta`  DECIMAL(12,2)  NOT NULL DEFAULT 0,
-    `stock_actual`  INT            NOT NULL DEFAULT 0,
-    `stock_minimo`  INT            NOT NULL DEFAULT 1,
+    `stock_actual`  DECIMAL(12,2)  NOT NULL DEFAULT 0,
+    `stock_minimo`  DECIMAL(12,2)  NOT NULL DEFAULT 1,
     `imagen`        VARCHAR(255)   NULL,
     `estado`        TINYINT(1)     NOT NULL DEFAULT 1,
     `created_at`    DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -96,9 +98,9 @@ CREATE TABLE IF NOT EXISTS `movimientos` (
     `producto_id`    INT UNSIGNED    NOT NULL,
     `tipo`           ENUM('entrada','salida','ajuste') NOT NULL,
     `motivo`         VARCHAR(20)     NULL,   -- venta|encargo|accidente|merma (sólo para salidas)
-    `cantidad`       INT             NOT NULL,
-    `stock_anterior` INT             NOT NULL,
-    `stock_nuevo`    INT             NOT NULL,
+    `cantidad`       DECIMAL(12,2)   NOT NULL,
+    `stock_anterior` DECIMAL(12,2)   NOT NULL,
+    `stock_nuevo`    DECIMAL(12,2)   NOT NULL,
     `usuario_id`     INT UNSIGNED    NULL,
     `proveedor_id`   INT UNSIGNED    NULL,
     `encargo_id`     INT UNSIGNED    NULL,   -- referencia al encargo si motivo='encargo'
@@ -125,6 +127,49 @@ CREATE TABLE IF NOT EXISTS `movimientos` (
 -- Migración idempotente: agregar las columnas nuevas (motivo, cliente, total,
 -- fecha_entrega, evidencia) a BDs ya creadas con el schema anterior.
 -- ----------------------------------------------------------------------------
+-- ----------------------------------------------------------------------------
+-- Migración idempotente: agregar longitud y diametro a productos para soportar
+-- unidades como "tubo" (longitud+diámetro) y "metro lineal" (longitud).
+-- ----------------------------------------------------------------------------
+SET @col_longitud = (SELECT COUNT(*) FROM information_schema.COLUMNS
+                     WHERE TABLE_SCHEMA = 'vidrios_inventory'
+                       AND TABLE_NAME = 'productos'
+                       AND COLUMN_NAME = 'longitud');
+SET @sql = IF(@col_longitud = 0,
+    'ALTER TABLE `productos`
+        ADD COLUMN `longitud` DECIMAL(10,2) NULL AFTER `grosor`,
+        ADD COLUMN `diametro` DECIMAL(10,2) NULL AFTER `longitud`',
+    'SELECT 1');
+PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- ----------------------------------------------------------------------------
+-- Migración idempotente: stock_actual / stock_minimo / cantidad / stock_*
+-- pasan a DECIMAL(12,2) para soportar unidades fraccionarias (m², metro
+-- lineal, lámina parcial). Sólo se aplica si la columna sigue como INT.
+-- ----------------------------------------------------------------------------
+SET @col_stock_type = (SELECT DATA_TYPE FROM information_schema.COLUMNS
+                       WHERE TABLE_SCHEMA = 'vidrios_inventory'
+                         AND TABLE_NAME = 'productos'
+                         AND COLUMN_NAME = 'stock_actual');
+SET @sql = IF(@col_stock_type = 'int',
+    'ALTER TABLE `productos`
+        MODIFY COLUMN `stock_actual` DECIMAL(12,2) NOT NULL DEFAULT 0,
+        MODIFY COLUMN `stock_minimo` DECIMAL(12,2) NOT NULL DEFAULT 1',
+    'SELECT 1');
+PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
+
+SET @col_cant_type = (SELECT DATA_TYPE FROM information_schema.COLUMNS
+                      WHERE TABLE_SCHEMA = 'vidrios_inventory'
+                        AND TABLE_NAME = 'movimientos'
+                        AND COLUMN_NAME = 'cantidad');
+SET @sql = IF(@col_cant_type = 'int',
+    'ALTER TABLE `movimientos`
+        MODIFY COLUMN `cantidad`       DECIMAL(12,2) NOT NULL,
+        MODIFY COLUMN `stock_anterior` DECIMAL(12,2) NOT NULL,
+        MODIFY COLUMN `stock_nuevo`    DECIMAL(12,2) NOT NULL',
+    'SELECT 1');
+PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
+
 SET @col_motivo = (SELECT COUNT(*) FROM information_schema.COLUMNS
                    WHERE TABLE_SCHEMA = 'vidrios_inventory'
                      AND TABLE_NAME = 'movimientos'
@@ -226,6 +271,7 @@ CREATE TABLE IF NOT EXISTS `encargos` (
     `lugar_entrega`  VARCHAR(255)   NULL,
     `fecha_entrega`  DATE           NULL,
     `detalles`       TEXT           NULL,
+    `notas_entrega`  TEXT           NULL,   -- consolidado de retazos al entregar
     `estado`         ENUM('pendiente','entregado','cancelado') NOT NULL DEFAULT 'pendiente',
     `usuario_id`     INT UNSIGNED   NULL,
     `created_at`     DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -261,6 +307,17 @@ SET @sql = IF(@col_encargo = 0,
     'SELECT 1');
 PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
 
+-- Migración idempotente: encargos.notas_entrega para guardar el consolidado
+-- de retazos generados al marcar el encargo como entregado.
+SET @col_ne = (SELECT COUNT(*) FROM information_schema.COLUMNS
+               WHERE TABLE_SCHEMA = 'vidrios_inventory'
+                 AND TABLE_NAME = 'encargos'
+                 AND COLUMN_NAME = 'notas_entrega');
+SET @sql = IF(@col_ne = 0,
+    'ALTER TABLE `encargos` ADD COLUMN `notas_entrega` TEXT NULL AFTER `detalles`',
+    'SELECT 1');
+PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
+
 SET @fk_enc = (SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS
                WHERE CONSTRAINT_SCHEMA = 'vidrios_inventory'
                  AND TABLE_NAME = 'movimientos'
@@ -271,6 +328,33 @@ SET @sql = IF(@fk_enc = 0,
         REFERENCES `encargos`(`id`) ON DELETE SET NULL ON UPDATE CASCADE',
     'SELECT 1');
 PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
+
+-- ============================================================================
+-- RETAZOS (sobrantes aprovechables que NO descuentan stock)
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS `retazos` (
+    `id`          INT UNSIGNED   AUTO_INCREMENT PRIMARY KEY,
+    `producto_id` INT UNSIGNED   NOT NULL,
+    `cantidad`    DECIMAL(12,2)  NOT NULL DEFAULT 1,
+    `ancho`       DECIMAL(10,2)  NULL,
+    `alto`        DECIMAL(10,2)  NULL,
+    `longitud`    DECIMAL(10,2)  NULL,
+    `origen`      ENUM('salida','encargo') NOT NULL,
+    `origen_id`   INT UNSIGNED   NULL,   -- id del movimiento o encargo origen
+    `observacion` VARCHAR(255)   NULL,
+    `usuario_id`  INT UNSIGNED   NULL,
+    `aprovechado` TINYINT(1)     NOT NULL DEFAULT 0,
+    `created_at`  DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX `idx_retazos_producto` (`producto_id`),
+    INDEX `idx_retazos_origen`   (`origen`, `origen_id`),
+    INDEX `idx_retazos_aprov`    (`aprovechado`),
+    INDEX `idx_retazos_created`  (`created_at`),
+    CONSTRAINT `fk_retazos_producto` FOREIGN KEY (`producto_id`)
+        REFERENCES `productos`(`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT `fk_retazos_usuario`  FOREIGN KEY (`usuario_id`)
+        REFERENCES `usuarios`(`id`)  ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB;
 
 -- ============================================================================
 -- AUDITORIA
@@ -404,16 +488,11 @@ CREATE TABLE IF NOT EXISTS `pedidos` (
 
 -- Categorías base
 INSERT IGNORE INTO `categorias` (`nombre`, `descripcion`) VALUES
-    ('Vidrio templado',         'Cristal tratado térmicamente, alta resistencia.'),
-    ('Vidrio laminado',         'Capas unidas con PVB, seguridad y aislamiento acústico.'),
-    ('Espejos',                 'Espejos planos y biselados.'),
-    ('Cristal decorativo',      'Vidrios serigrafiados, ácidos y de color.'),
-    ('Insumos y herrajes',      'Selladores, perfiles, ventosas y herramientas.'),
-    ('Venta de productos',      'Productos terminados disponibles para venta directa.'),
-    ('Vidrios',                 'Vidrios crudos, templados, laminados y de seguridad.'),
-    ('Silicona',                'Sellantes, siliconas estructurales y adhesivos.'),
-    ('Instalaciones y armados', 'Servicios de instalación y armado en obra.'),
-    ('Venta de cortes',         'Venta de cortes a medida y retales.');
+    ('Vidrio',      'Planchas de vidrio templado, laminado y espejos.'),
+    ('Consumibles', 'Selladores, pegamentos y otros insumos de uso continuo.'),
+    ('Herrajes',    'Bisagras, chapas, cerraduras y accesorios metálicos.'),
+    ('Perfiles',    'Perfiles de aluminio y materiales por metro lineal.'),
+    ('Tornillos',   'Tornillería, anclajes y elementos de fijación.');
 
 -- Proveedores
 INSERT IGNORE INTO `proveedores` (`nombre`, `contacto`, `telefono`, `email`, `direccion`) VALUES
@@ -422,29 +501,43 @@ INSERT IGNORE INTO `proveedores` (`nombre`, `contacto`, `telefono`, `email`, `di
     ('Templex Internacional', 'Mariana Vega',    '+57 604 444 8210', 'pedidos@templex.com', 'Medellín, Colombia');
 
 -- Productos
+-- Las columnas dimensionales se llenan según la unidad: lámina usa
+-- ancho/alto/grosor; metro lineal usa longitud; unidad no usa ninguna.
 INSERT IGNORE INTO `productos`
     (`codigo`, `nombre`, `descripcion`, `categoria_id`, `proveedor_id`,
-     `unidad`, `ancho`, `alto`, `grosor`, `precio_compra`, `precio_venta`,
-     `stock_actual`, `stock_minimo`)
+     `unidad`, `ancho`, `alto`, `grosor`, `longitud`, `diametro`,
+     `precio_compra`, `precio_venta`, `stock_actual`, `stock_minimo`)
 VALUES
-    ('VID-00001', 'Vidrio templado claro 10mm',  'Lámina estándar 1.83 × 2.44 m',        1, 1, 'lámina', 1830, 2440, 10, 220000, 380000, 18, 5),
-    ('VID-00002', 'Vidrio laminado 6+6 mm',      'Doble capa con PVB transparente',       2, 1, 'lámina', 1830, 2440, 12, 280000, 460000,  3, 4),
-    ('VID-00003', 'Espejo plata 4mm',            'Lámina 2.40 × 1.50 m, canto pulido',   3, 2, 'lámina', 2400, 1500,  4, 130000, 230000, 22, 6),
-    ('VID-00004', 'Cristal serigrafiado azul',   'Vidrio templado con tinta azul',        4, 3, 'lámina', 1830, 2440,  8, 260000, 420000,  5, 6),
-    ('VID-00005', 'Sellador de silicona neutra', 'Cartucho 300 ml, color claro',          5, 1, 'u',      NULL, NULL, NULL, 18000,  32000, 60, 12),
-    ('VID-00006', 'Ventosa doble 8"',            'Para manipulación de láminas pesadas',  5, 2, 'u',      NULL, NULL, NULL, 95000, 160000,  4,  3);
+    ('VID-00001', 'Plancha vidrio templado 6mm', 'Lámina 1.83 × 2.44 m, templada incolora',
+        1, 1, 'lámina',       1830, 2440,    6, NULL, NULL, 180000, 320000, 18, 5),
+    ('VID-00002', 'Espejo plateado 4mm',         'Lámina 2.40 × 1.50 m, canto pulido',
+        1, 2, 'lámina',       2400, 1500,    4, NULL, NULL, 130000, 230000, 22, 6),
+    ('VID-00003', 'Silicona neutra transparente','Cartucho 300 ml, anti-hongos',
+        2, 1, 'unidad',       NULL, NULL, NULL, NULL, NULL,  18000,  32000, 60, 12),
+    ('VID-00004', 'Pegamento epóxico bicomponente','Kit 80 g resina + endurecedor',
+        2, 3, 'unidad',       NULL, NULL, NULL, NULL, NULL,  22000,  38000, 35,  8),
+    ('VID-00005', 'Bisagra hidráulica para puerta','Acero inoxidable, cierre suave',
+        3, 2, 'unidad',       NULL, NULL, NULL, NULL, NULL,  45000,  78000, 24,  6),
+    ('VID-00006', 'Chapa cerradura embutida',     'Cilindro doble llave, acabado cromo',
+        3, 3, 'unidad',       NULL, NULL, NULL, NULL, NULL,  68000, 115000, 12,  4),
+    ('VID-00007', 'Perfil aluminio plata 1"',     'Barra estándar 6 m, anodizado plata',
+        4, 1, 'metro lineal', NULL, NULL, NULL, 6000, NULL,  12000,  21000, 90, 20),
+    ('VID-00008', 'Tornillo autorroscante 1"',    'Cabeza plana, punta broca · paquete x100',
+        5, 2, 'unidad',       NULL, NULL, NULL, NULL, NULL,   8500,  15000, 80, 15);
 
 -- Movimientos iniciales (usuario_id = NULL porque el admin aún no existe)
 INSERT IGNORE INTO `movimientos`
     (`producto_id`, `tipo`, `cantidad`, `stock_anterior`, `stock_nuevo`,
      `usuario_id`, `proveedor_id`, `observacion`)
 VALUES
-    (1, 'entrada', 18, 0, 18, NULL, 1, 'Carga inicial de inventario'),
-    (2, 'entrada',  3, 0,  3, NULL, 1, 'Carga inicial — pedido parcial'),
-    (3, 'entrada', 22, 0, 22, NULL, 2, 'Carga inicial'),
-    (4, 'entrada',  5, 0,  5, NULL, 3, 'Carga inicial'),
-    (5, 'entrada', 60, 0, 60, NULL, 1, 'Compra silicona x60'),
-    (6, 'entrada',  4, 0,  4, NULL, 2, 'Carga inicial — herramienta');
+    (1, 'entrada', 18, 0, 18, NULL, 1, 'Carga inicial — planchas de vidrio'),
+    (2, 'entrada', 22, 0, 22, NULL, 2, 'Carga inicial — espejos'),
+    (3, 'entrada', 60, 0, 60, NULL, 1, 'Compra silicona x60'),
+    (4, 'entrada', 35, 0, 35, NULL, 3, 'Carga inicial — pegamento'),
+    (5, 'entrada', 24, 0, 24, NULL, 2, 'Carga inicial — bisagras'),
+    (6, 'entrada', 12, 0, 12, NULL, 3, 'Carga inicial — chapas'),
+    (7, 'entrada', 90, 0, 90, NULL, 1, 'Carga inicial — perfiles aluminio'),
+    (8, 'entrada', 80, 0, 80, NULL, 2, 'Carga inicial — tornillos');
 
 -- Roles
 INSERT IGNORE INTO `roles` (`nombre`, `descripcion`) VALUES

@@ -40,7 +40,12 @@ $money = static fn(float $n): string  => 'S/. ' . number_format($n, 0, ',', '.')
             $deuda = (float) $r['deuda_activa'];
             $ubic = trim(($r['ciudad'] ?? '') . (!empty($r['pais']) ? ', ' . $r['pais'] : ''), ', ');
         ?>
-            <tr class="table__row<?= ((int) $r['estado'] === 0 ? ' is-disabled' : '') ?>">
+            <tr class="table__row table__row--clickable<?= ((int) $r['estado'] === 0 ? ' is-disabled' : '') ?>"
+                data-modal-src="<?= BASE_URL ?>/reporte/proveedorDetalle/<?= (int) $r['id'] ?>"
+                data-modal-title="<?= $h($r['nombre']) ?>"
+                data-modal-kicker="Proveedor · Detalle"
+                data-modal-size="lg"
+                role="button" tabindex="0">
                 <td class="table__td">
                     <strong><?= $h($r['nombre']) ?></strong>
                     <?php if (!empty($r['email'])): ?>

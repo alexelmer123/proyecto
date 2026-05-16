@@ -16,11 +16,11 @@ $h = static fn(?string $s): string => htmlspecialchars((string) $s, ENT_QUOTES, 
 <div class="card card--summary">
     <div class="card__metric">
         <span class="card__label">Stock actual</span>
-        <span class="card__value mono"><?= (int) $producto['stock_actual'] ?></span>
+        <span class="card__value mono"><?= $h(fmt_cantidad($producto['stock_actual'])) ?></span>
     </div>
     <div class="card__metric">
         <span class="card__label">Stock mínimo</span>
-        <span class="card__value mono"><?= (int) $producto['stock_minimo'] ?></span>
+        <span class="card__value mono"><?= $h(fmt_cantidad($producto['stock_minimo'])) ?></span>
     </div>
     <div class="card__metric">
         <span class="card__label">Unidad</span>
@@ -34,8 +34,8 @@ $h = static fn(?string $s): string => htmlspecialchars((string) $s, ENT_QUOTES, 
 
     <label class="field">
         <span class="field__label">Nuevo stock *</span>
-        <input class="field__input mono" type="number" min="0" name="stock_nuevo"
-               value="<?= (int) $producto['stock_actual'] ?>" required autofocus>
+        <input class="field__input mono" type="number" min="0" step="0.01" name="stock_nuevo"
+               value="<?= $h(fmt_cantidad($producto['stock_actual'])) ?>" required autofocus>
     </label>
     <label class="field">
         <span class="field__label">Observación</span>

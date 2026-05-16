@@ -21,9 +21,100 @@
         initPermisosModulo();
         initUsuarioPermisos();
         initEncargoItems();
+        initMermasSection();
+        initProductoUnidadFields(document);
+        initEncargoMermasRows(document);
         initSidebarDrawer();
         initPwa();
     });
+
+    /* -------------------------------------------------------------------------
+     * Form de entrega de encargo: cada producto puede tener N filas de
+     * merma/accidente/retazo. Cada fieldset trae su propio <template> con la
+     * estructura de la fila (placeholder __IDX__ en los names). El form expone
+     * un contador global `data-merma-next-idx` que se incrementa al clonar.
+     * ------------------------------------------------------------------------- */
+    function initEncargoMermasRows(scope) {
+        const forms = (scope || document).querySelectorAll('[data-encargo-mermas]');
+        forms.forEach((form) => {
+            if (form.dataset.encargoMermasInit === '1') return;
+            form.dataset.encargoMermasInit = '1';
+
+            form.addEventListener('click', (ev) => {
+                const add = ev.target.closest('[data-add-merma-row]');
+                if (add) {
+                    ev.preventDefault();
+                    const fs   = add.closest('[data-encargo-item]');
+                    const tpl  = fs?.querySelector('[data-mermas-row-template]');
+                    const list = fs?.querySelector('[data-mermas-rows-list]');
+                    if (!tpl || !list) return;
+                    const idx = parseInt(form.dataset.mermaNextIdx || '0', 10);
+                    form.dataset.mermaNextIdx = String(idx + 1);
+                    const frag = tpl.content.cloneNode(true);
+                    frag.querySelectorAll('[name]').forEach((el) => {
+                        el.name = el.name.replace('__IDX__', String(idx));
+                    });
+                    list.appendChild(frag);
+                    return;
+                }
+                const rm = ev.target.closest('[data-remove-merma-row]');
+                if (rm) {
+                    ev.preventDefault();
+                    const row  = rm.closest('[data-merma-row]');
+                    const list = row?.parentElement;
+                    if (!row || !list) return;
+                    // Si es la única fila del fieldset, la limpiamos en vez de quitarla.
+                    if (list.querySelectorAll('[data-merma-row]').length <= 1) {
+                        row.querySelectorAll('input').forEach((i) => { i.value = ''; });
+                        const sel = row.querySelector('select');
+                        if (sel) sel.value = 'merma';
+                    } else {
+                        row.remove();
+                    }
+                }
+            });
+        });
+    }
+
+    /* -------------------------------------------------------------------------
+     * Form de productos: muestra los campos dimensionales según la unidad
+     * seleccionada. El mapa unidad → dims viene serializado en
+     * data-unidad-dims sobre el <form data-producto-form>. Cada input vive en
+     * un wrapper [data-dim="<nombre>"] que se hidea cuando no aplica; los
+     * ocultos se limpian para no persistir datos huérfanos.
+     * ------------------------------------------------------------------------- */
+    function initProductoUnidadFields(scope) {
+        const forms = (scope || document).querySelectorAll('[data-producto-form]');
+        forms.forEach((form) => {
+            if (form.dataset.unidadInit === '1') return;
+            form.dataset.unidadInit = '1';
+            const select = form.querySelector('[data-unidad-select]');
+            if (!select) return;
+            let dimsMap = {};
+            try { dimsMap = JSON.parse(form.dataset.unidadDims || '{}'); }
+            catch (_) { dimsMap = {}; }
+            const empty = form.querySelector('[data-dim-empty]');
+
+            const sync = ({ clearHidden = false } = {}) => {
+                const visibles = Array.isArray(dimsMap[select.value]) ? dimsMap[select.value] : [];
+                const wrappers = form.querySelectorAll('[data-dim]');
+                let mostrados = 0;
+                wrappers.forEach((w) => {
+                    const name = w.dataset.dim;
+                    const visible = visibles.includes(name);
+                    w.hidden = !visible;
+                    if (visible) mostrados += 1;
+                    if (!visible && clearHidden) {
+                        w.querySelectorAll('input').forEach((i) => { i.value = ''; });
+                    }
+                });
+                if (empty) empty.hidden = mostrados !== 0;
+            };
+
+            select.addEventListener('change', () => sync({ clearHidden: true }));
+            sync();
+        });
+    }
 
     /* -------------------------------------------------------------------------
      * Encargos: filas dinámicas de productos en el form.
@@ -548,6 +639,7 @@
             select.addEventListener('change', async () => {
                 const id = select.value;
                 resetStockInfo(target);
+                aplicarConfigUnidad(select.form, null); // resetea step/mermas
 
                 if (!id) {
                     target.textContent = 'Selecciona un producto para ver el stock actual.';
@@ -569,8 +661,9 @@
                     target.classList.toggle('is-low', low);
                     target.innerHTML =
                         `<strong>${data.codigo}</strong> · ${escapeHtml(data.nombre)} — ` +
-                        `Stock disponible: <strong>${data.stock_actual}</strong> ${escapeHtml(data.unidad)} ` +
-                        `<small>(mín. ${data.stock_minimo}${low ? ' · CRÍTICO' : ''})</small>`;
+                        `Stock disponible: <strong>${formatCantidad(data.stock_actual)}</strong> ${escapeHtml(data.unidad)} ` +
+                        `<small>(mín. ${formatCantidad(data.stock_minimo)}${low ? ' · CRÍTICO' : ''})</small>`;
+                    aplicarConfigUnidad(select.form, data);
                 } catch (err) {
                     target.textContent = 'No fue posible consultar el stock.';
                     target.classList.add('is-low');
@@ -579,8 +672,93 @@
         });
     }
 
+    /**
+     * Aplica al form de salida/entrada la configuración derivada de la unidad
+     * del producto seleccionado:
+     *  - ajusta step y min del input de cantidad (sin mismatch que rompa la
+     *    validación nativa del navegador),
+     *  - actualiza el label del input para mostrar la unidad seleccionada,
+     *  - muestra/oculta la sección de mermas en el form de salida.
+     * Llamar con data=null para resetear al estado inicial.
+     */
+    function aplicarConfigUnidad(form, data) {
+        if (!form) return;
+        const cantInput  = form.querySelector('[data-cantidad-input]');
+        const cantLabel  = form.querySelector('[data-cantidad-label]');
+        const mermas     = document.querySelector('[data-mermas-wrapper]');
+        const mermaInputs = document.querySelectorAll('[data-merma-cantidad]');
+
+        if (!data) {
+            if (cantInput) {
+                cantInput.step = '1';
+                cantInput.min  = '1';
+            }
+            if (cantLabel) cantLabel.textContent = cantLabel.dataset.baseLabel || cantLabel.textContent;
+            if (mermas) mermas.hidden = true;
+            return;
+        }
+        const paso = data.paso || '1';
+        if (cantInput) {
+            cantInput.step = paso;
+            cantInput.min  = paso; // alinear min con step evita ValidityState "stepMismatch"
+        }
+        if (cantLabel) {
+            if (!cantLabel.dataset.baseLabel) cantLabel.dataset.baseLabel = cantLabel.textContent;
+            cantLabel.textContent = `${cantLabel.dataset.baseLabel} (${data.unidad})`;
+        }
+        mermaInputs.forEach((i) => { i.step = paso; i.min = paso; });
+        if (mermas) mermas.hidden = !data.permite_mermas;
+    }
+
+    function formatCantidad(n) {
+        const num = Number(n);
+        if (!isFinite(num)) return String(n);
+        return num % 1 === 0 ? String(num) : num.toFixed(2);
+    }
+
     function resetStockInfo(el) {
         el.classList.remove('is-loaded', 'is-low');
+    }
+
+    /* -------------------------------------------------------------------------
+     * Sección de mermas/retazos en formularios de salida (venta, accidente).
+     * Activa: se muestra al seleccionar producto. Soporta lista dinámica.
+     * Markup esperado:
+     *   <section data-mermas-wrapper hidden>
+     *     <button data-add-merma>+</button>
+     *     <div data-mermas-list>
+     *       <div data-merma-row> … <button data-remove-merma>×</button> </div>
+     *     </div>
+     *     <template data-merma-template>…__IDX__…</template>
+     *   </section>
+     * ------------------------------------------------------------------------- */
+    function initMermasSection() {
+        const wrapper = document.querySelector('[data-mermas-wrapper]');
+        if (!wrapper) return;
+
+        const list   = wrapper.querySelector('[data-mermas-list]');
+        const tpl    = wrapper.querySelector('[data-merma-template]');
+        const addBtn = wrapper.querySelector('[data-add-merma]');
+        // La visibilidad del wrapper la controla aplicarConfigUnidad() al
+        // cambiar el producto, en función de unidad.permite_mermas.
+
+        let nextIdx = list.querySelectorAll('[data-merma-row]').length;
+
+        addBtn?.addEventListener('click', () => {
+            if (!tpl) return;
+            const frag = tpl.content.cloneNode(true);
+            frag.querySelectorAll('[name]').forEach((el) => {
+                el.name = el.name.replace('__IDX__', String(nextIdx));
+            });
+            list.appendChild(frag);
+            nextIdx += 1;
+        });
+
+        list.addEventListener('click', (ev) => {
+            const btn = ev.target.closest('[data-remove-merma]');
+            if (!btn) return;
+            btn.closest('[data-merma-row]')?.remove();
+        });
     }
 
     function escapeHtml(s) {
@@ -702,6 +880,12 @@
 
         // Upload con preview dentro del modal
         body.querySelectorAll('[data-upload]').forEach(enhanceFileInput);
+
+        // Form de productos: bindea el select de unidad si está presente
+        initProductoUnidadFields(body);
+
+        // Form de entrega de encargo: filas dinámicas de mermas por producto
+        initEncargoMermasRows(body);
 
         // Interceptar submit del primer form para enviar vía fetch
         const form = body.querySelector('form');

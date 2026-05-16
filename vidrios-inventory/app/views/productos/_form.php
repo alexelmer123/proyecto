@@ -1,6 +1,7 @@
 <?php
 /** @var array  $form */        /** @var array  $errores */
 /** @var array  $categorias */  /** @var array  $proveedores */
+/** @var array  $unidades */
 /** @var string $action */      /** @var string $submitLabel */
 /** @var bool   $esEdicion */
 $h    = static fn(?string $s): string => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
@@ -9,8 +10,21 @@ $err  = static fn(string $k) => isset($errores[$k])
     : '';
 $esEdicion = (bool) ($esEdicion ?? false);
 $idActual  = (int) ($form['id'] ?? 0);
+
+$unidades       = $unidades ?? [];
+$unidadActual   = (string) ($form['unidad'] ?? 'm²');
+$unidadDesconocida = $unidadActual !== '' && !isset($unidades[$unidadActual]);
+
+// Mapa unidad → dims que se serializa al markup para que app.js controle
+// la visibilidad de los inputs dimensionales sin duplicar la tabla.
+$dimsMap = [];
+foreach ($unidades as $value => $meta) {
+    $dimsMap[$value] = $meta['dims'];
+}
 ?>
-<form method="post" action="<?= $h($action) ?>" enctype="multipart/form-data" class="form form--modal" novalidate>
+<form method="post" action="<?= $h($action) ?>" enctype="multipart/form-data" class="form form--modal" novalidate
+      data-producto-form
+      data-unidad-dims='<?= $h(json_encode($dimsMap, JSON_UNESCAPED_UNICODE)) ?>'>
     <fieldset class="form__group">
         <legend class="form__legend">Identidad</legend>
         <div class="form__row form__row--2">
@@ -65,31 +79,60 @@ $idActual  = (int) ($form['id'] ?? 0);
     </fieldset>
 
     <fieldset class="form__group">
-        <legend class="form__legend">Dimensiones</legend>
-        <div class="form__row form__row--4">
+        <legend class="form__legend">Unidad y dimensiones</legend>
+        <div class="form__row form__row--2">
             <label class="field">
-                <span class="field__label">Unidad</span>
-                <input class="field__input" name="unidad" value="<?= $h($form['unidad'] ?? 'm²') ?>"
-                       placeholder="m², lámina, u">
+                <span class="field__label">Unidad de medida *</span>
+                <select class="field__input" name="unidad" required data-unidad-select>
+                    <?php foreach ($unidades as $value => $meta): ?>
+                        <option value="<?= $h((string) $value) ?>"
+                            <?= $unidadActual === (string) $value ? 'selected' : '' ?>>
+                            <?= $h((string) $meta['label']) ?>
+                        </option>
+                    <?php endforeach; ?>
+                    <?php if ($unidadDesconocida): ?>
+                        <option value="<?= $h($unidadActual) ?>" selected>
+                            <?= $h($unidadActual) ?> (legado)
+                        </option>
+                    <?php endif; ?>
+                </select>
+                <?= $err('unidad') ?>
             </label>
-            <label class="field">
+        </div>
+        <div class="form__row form__row--4" data-dim-grid>
+            <label class="field" data-dim="ancho" hidden>
                 <span class="field__label">Ancho (mm)</span>
                 <input class="field__input mono" type="number" step="0.01" min="0"
                        name="ancho" value="<?= $h((string)($form['ancho'] ?? '')) ?>">
                 <?= $err('ancho') ?>
             </label>
-            <label class="field">
+            <label class="field" data-dim="alto" hidden>
                 <span class="field__label">Alto (mm)</span>
                 <input class="field__input mono" type="number" step="0.01" min="0"
                        name="alto" value="<?= $h((string)($form['alto'] ?? '')) ?>">
                 <?= $err('alto') ?>
             </label>
-            <label class="field">
+            <label class="field" data-dim="grosor" hidden>
                 <span class="field__label">Grosor (mm)</span>
                 <input class="field__input mono" type="number" step="0.01" min="0"
                        name="grosor" value="<?= $h((string)($form['grosor'] ?? '')) ?>">
                 <?= $err('grosor') ?>
             </label>
+            <label class="field" data-dim="longitud" hidden>
+                <span class="field__label">Longitud (mm)</span>
+                <input class="field__input mono" type="number" step="0.01" min="0"
+                       name="longitud" value="<?= $h((string)($form['longitud'] ?? '')) ?>">
+                <?= $err('longitud') ?>
+            </label>
+            <label class="field" data-dim="diametro" hidden>
+                <span class="field__label">Diámetro (mm)</span>
+                <input class="field__input mono" type="number" step="0.01" min="0"
+                       name="diametro" value="<?= $h((string)($form['diametro'] ?? '')) ?>">
+                <?= $err('diametro') ?>
+            </label>
+            <p class="form__hint form__hint--info" data-dim-empty hidden>
+                Esta unidad no requiere campos de dimensiones.
+            </p>
         </div>
     </fieldset>
 
@@ -111,13 +154,13 @@ $idActual  = (int) ($form['id'] ?? 0);
             <?php if (!$esEdicion): ?>
                 <label class="field">
                     <span class="field__label">Stock inicial</span>
-                    <input class="field__input mono" type="number" min="0"
+                    <input class="field__input mono" type="number" min="0" step="0.01"
                            name="stock_actual" value="<?= $h((string)($form['stock_actual'] ?? '0')) ?>">
                 </label>
             <?php endif; ?>
             <label class="field">
                 <span class="field__label">Stock mínimo *</span>
-                <input class="field__input mono" type="number" min="1"
+                <input class="field__input mono" type="number" min="0.01" step="0.01"
                        name="stock_minimo" value="<?= $h((string)($form['stock_minimo'] ?? '1')) ?>" required>
                 <?= $err('stock_minimo') ?>
             </label>

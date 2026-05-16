@@ -13,6 +13,10 @@ final class Movimiento extends BaseModel
     public const MOTIVO_ENCARGO   = 'encargo';
     public const MOTIVO_ACCIDENTE = 'accidente';
     public const MOTIVO_MERMA     = 'merma';
+    // Retazo: marcador de "sobrante útil" que NO afecta stock. No se persiste
+    // como movimiento; el controlador lo anexa como nota al observacion del
+    // movimiento principal.
+    public const MOTIVO_RETAZO    = 'retazo';
 
     /** Motivos válidos para salidas. */
     public const MOTIVOS_SALIDA = [
@@ -29,7 +33,7 @@ final class Movimiento extends BaseModel
     public function registrar(
         int $productoId,
         string $tipo,
-        int $cantidad,
+        float $cantidad,
         int $usuarioId,
         ?string $observacion = null,
         ?int $proveedorId = null,
@@ -67,14 +71,17 @@ final class Movimiento extends BaseModel
                 throw new RuntimeException('Producto no encontrado.');
             }
 
-            $stockAnterior = (int) $producto['stock_actual'];
+            $stockAnterior = (float) $producto['stock_actual'];
             $stockNuevo    = match ($tipo) {
                 self::TIPO_ENTRADA => $stockAnterior + $cantidad,
                 self::TIPO_SALIDA  => $stockAnterior - $cantidad,
                 self::TIPO_AJUSTE  => $cantidad, // ajuste = nuevo valor absoluto
             };
 
-            if ($tipo === self::TIPO_SALIDA && $cantidad > $stockAnterior) {
+            // Redondeo a 2 decimales para evitar drift por suma de floats.
+            $stockNuevo = round($stockNuevo, 2);
+
+            if ($tipo === self::TIPO_SALIDA && $cantidad > $stockAnterior + 0.0001) {
                 throw new RuntimeException(
                     "Stock insuficiente. Disponible: {$stockAnterior}, solicitado: {$cantidad}."
                 );
@@ -83,9 +90,12 @@ final class Movimiento extends BaseModel
                 throw new RuntimeException('El stock resultante no puede ser negativo.');
             }
 
-            // Actualizar stock
+            // Actualizar stock (DECIMAL: bindeamos como string formateado para
+            // no perder precisión por float)
             $upd = $this->db->prepare("UPDATE productos SET stock_actual = :s WHERE id = :id");
-            $upd->execute([':s' => $stockNuevo, ':id' => $productoId]);
+            $upd->bindValue(':s',  number_format($stockNuevo, 2, '.', ''));
+            $upd->bindValue(':id', $productoId, PDO::PARAM_INT);
+            $upd->execute();
 
             // Registrar movimiento
             $ins = $this->db->prepare(
@@ -104,9 +114,9 @@ final class Movimiento extends BaseModel
             $ins->bindValue(':p',  $productoId,  PDO::PARAM_INT);
             $ins->bindValue(':t',  $tipo);
             $ins->bindValue(':m',  $motivo);
-            $ins->bindValue(':c',  $cantidad,    PDO::PARAM_INT);
-            $ins->bindValue(':sa', $stockAnterior, PDO::PARAM_INT);
-            $ins->bindValue(':sn', $stockNuevo,    PDO::PARAM_INT);
+            $ins->bindValue(':c',  number_format($cantidad,      2, '.', ''));
+            $ins->bindValue(':sa', number_format($stockAnterior, 2, '.', ''));
+            $ins->bindValue(':sn', number_format($stockNuevo,    2, '.', ''));
             $ins->bindValue(':u',  $usuarioIdFk, $usuarioIdFk === null ? PDO::PARAM_NULL : PDO::PARAM_INT);
             $ins->bindValue(':pr', $proveedorId, $proveedorId === null ? PDO::PARAM_NULL : PDO::PARAM_INT);
             $ins->bindValue(':en', $encargoId,   $encargoId   === null ? PDO::PARAM_NULL : PDO::PARAM_INT);
@@ -211,6 +221,86 @@ final class Movimiento extends BaseModel
             $sql .= ' AND m.created_at <= :hasta';
             $params[':hasta'] = $hasta . ' 23:59:59';
         }
+    }
+
+    /**
+     * Mermas / retazos agrupadas por producto.
+     * Considera salidas con motivo merma o accidente.
+     */
+    public function mermasPorProducto(?string $desde = null, ?string $hasta = null, ?string $motivo = null): array
+    {
+        $sql = "SELECT p.id AS producto_id, p.codigo, p.nombre,
+                       c.nombre AS categoria_nombre,
+                       SUM(CASE WHEN m.motivo = 'merma'     THEN m.cantidad ELSE 0 END) AS total_merma,
+                       SUM(CASE WHEN m.motivo = 'accidente' THEN m.cantidad ELSE 0 END) AS total_accidente,
+                       SUM(m.cantidad) AS total_perdido,
+                       SUM(m.cantidad * p.precio_compra) AS valor_perdido,
+                       COUNT(*) AS eventos,
+                       MAX(m.created_at) AS ultimo_evento
+                FROM `{$this->table}` m
+                INNER JOIN productos p ON p.id = m.producto_id
+                LEFT JOIN categorias c ON c.id = p.categoria_id
+                WHERE m.tipo = 'salida'
+                  AND m.motivo IN ('merma','accidente')";
+        $params = [];
+        if ($motivo === 'merma' || $motivo === 'accidente') {
+            $sql .= " AND m.motivo = :motivo";
+            $params[':motivo'] = $motivo;
+        }
+        if ($desde !== null && $desde !== '') {
+            $sql .= " AND m.created_at >= :desde";
+            $params[':desde'] = $desde . ' 00:00:00';
+        }
+        if ($hasta !== null && $hasta !== '') {
+            $sql .= " AND m.created_at <= :hasta";
+            $params[':hasta'] = $hasta . ' 23:59:59';
+        }
+        $sql .= " GROUP BY p.id, p.codigo, p.nombre, c.nombre
+                  ORDER BY total_perdido DESC, p.nombre ASC";
+
+        $stmt = $this->db->prepare($sql);
+        foreach ($params as $k => $v) {
+            $stmt->bindValue($k, $v, $this->pdoType($v));
+        }
+        $stmt->execute();
+        return $stmt->fetchAll();
+    }
+
+    /** Lista cronológica de mermas con valorización a precio de compra. */
+    public function mermasDetalle(?string $desde = null, ?string $hasta = null, ?string $motivo = null, int $limit = 500): array
+    {
+        $sql = "SELECT m.id, m.created_at, m.cantidad, m.motivo, m.observacion,
+                       p.codigo AS producto_codigo, p.nombre AS producto_nombre,
+                       p.precio_compra,
+                       (m.cantidad * p.precio_compra) AS valor_perdido,
+                       u.nombre AS usuario_nombre
+                FROM `{$this->table}` m
+                INNER JOIN productos p ON p.id = m.producto_id
+                LEFT JOIN usuarios u ON u.id = m.usuario_id
+                WHERE m.tipo = 'salida'
+                  AND m.motivo IN ('merma','accidente')";
+        $params = [];
+        if ($motivo === 'merma' || $motivo === 'accidente') {
+            $sql .= " AND m.motivo = :motivo";
+            $params[':motivo'] = $motivo;
+        }
+        if ($desde !== null && $desde !== '') {
+            $sql .= " AND m.created_at >= :desde";
+            $params[':desde'] = $desde . ' 00:00:00';
+        }
+        if ($hasta !== null && $hasta !== '') {
+            $sql .= " AND m.created_at <= :hasta";
+            $params[':hasta'] = $hasta . ' 23:59:59';
+        }
+        $sql .= " ORDER BY m.created_at DESC, m.id DESC LIMIT :__limit__";
+
+        $stmt = $this->db->prepare($sql);
+        foreach ($params as $k => $v) {
+            $stmt->bindValue($k, $v, $this->pdoType($v));
+        }
+        $stmt->bindValue(':__limit__', $limit, PDO::PARAM_INT);
+        $stmt->execute();
+        return $stmt->fetchAll();
     }
 
     public function agruparPorPeriodo(string $agrupacion = 'dia', ?string $desde = null, ?string $hasta = null): array

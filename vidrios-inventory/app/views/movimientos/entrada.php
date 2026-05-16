@@ -28,8 +28,9 @@ $h = static fn(?string $s): string => htmlspecialchars((string) $s, ENT_QUOTES, 
 
     <div class="form__row form__row--2">
         <label class="field">
-            <span class="field__label">Cantidad *</span>
-            <input class="field__input mono" type="number" min="1" name="cantidad" required value="1">
+            <span class="field__label" data-cantidad-label>Cantidad *</span>
+            <input class="field__input mono" type="number" min="1" step="1" name="cantidad" required value="1"
+                   data-cantidad-input>
         </label>
         <label class="field">
             <span class="field__label">Proveedor</span>
