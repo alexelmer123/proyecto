@@ -24,7 +24,7 @@ final class Encargo extends BaseModel
         }
 
         // Si el id del usuario no corresponde a una fila real, usamos NULL
-        // (la FK es ON DELETE SET NULL, así que es válido).
+        // (relación lógica, sin FK; el código preserva la integridad).
         $usuarioIdFk = $this->resolverUsuarioId($usuarioId);
 
         $this->db->beginTransaction();
@@ -412,7 +412,7 @@ final class Encargo extends BaseModel
             SELECT ei.*, p.codigo AS producto_codigo, p.nombre AS producto_nombre,
                    p.unidad AS producto_unidad
               FROM encargo_items ei
-              JOIN productos p ON p.id = ei.producto_id
+              INNER JOIN productos p ON p.id = ei.producto_id
              WHERE ei.encargo_id = :id
              ORDER BY ei.id
         ");

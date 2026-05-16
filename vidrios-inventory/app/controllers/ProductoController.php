@@ -187,15 +187,24 @@ final class ProductoController extends Controller
             if ($errores === []) {
                 $datos = $form;
                 unset($datos['id'], $datos['stock_actual']); // stock no se modifica desde aquí
-                $quitarImagen = ($_POST['quitar_imagen'] ?? '0') === '1';
+                $quitarImagen   = ($_POST['quitar_imagen'] ?? '0') === '1';
+                $imagenAnterior = $producto['imagen'] ?? null;
+                $imagenObsoleta = null;
                 if (is_string($imagen)) {
                     $datos['imagen'] = $imagen;
+                    if ($imagenAnterior && $imagenAnterior !== $imagen) {
+                        $imagenObsoleta = $imagenAnterior;
+                    }
                 } elseif ($quitarImagen) {
                     $datos['imagen'] = null;
+                    $imagenObsoleta  = $imagenAnterior;
                 } else {
                     unset($datos['imagen']);
                 }
                 $this->productos->update($id, $datos);
+                if ($imagenObsoleta !== null) {
+                    $this->eliminarImagenFisica($imagenObsoleta);
+                }
                 $this->audit('editar', 'producto', (string) $id, "Producto «{$form['nombre']}» editado.");
                 $this->setFlash('success', 'Producto actualizado.');
                 if ($this->isAjax()) {
@@ -527,5 +536,27 @@ final class ProductoController extends Controller
             return ['error' => 'No se pudo guardar la imagen.'];
         }
         return UPLOAD_URL . '/' . $nombre;
+    }
+
+    /**
+     * Borra el archivo físico de una imagen previamente almacenada.
+     * Recibe la URL relativa tal cual quedó guardada en productos.imagen,
+     * la convierte a ruta dentro de UPLOAD_DIR y valida que el archivo no
+     * escape de esa carpeta (defensa básica contra path-traversal).
+     * Falla en silencio: si el archivo no existe o no se puede borrar, no
+     * interrumpe el flujo de edición.
+     */
+    private function eliminarImagenFisica(?string $url): void
+    {
+        if ($url === null || $url === '') return;
+        $nombre = basename($url);
+        if ($nombre === '' || $nombre === '.' || $nombre === '..') return;
+        $ruta = UPLOAD_DIR . DIRECTORY_SEPARATOR . $nombre;
+        $real = realpath($ruta);
+        $base = realpath(UPLOAD_DIR);
+        if ($real === false || $base === false || !str_starts_with($real, $base)) return;
+        if (is_file($real)) {
+            @unlink($real);
+        }
     }
 }

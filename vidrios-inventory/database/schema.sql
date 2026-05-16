@@ -1,9 +1,16 @@
 -- ============================================================================
 -- Vitralia · vidrios_inventory
 -- MySQL 8 — InnoDB · utf8mb4
--- Schema completo: incluye todas las tablas y datos semilla.
--- Ejecutar en una base de datos nueva (DROP DATABASE IF EXISTS vidrios_inventory
--- antes de correr este script si se desea empezar de cero).
+-- ----------------------------------------------------------------------------
+-- Schema "tablas sueltas": NO se declaran FOREIGN KEYs.
+-- Las columnas *_id siguen existiendo y los índices se conservan para que los
+-- INNER/LEFT JOIN de los modelos sigan siendo rápidos, pero la integridad
+-- relacional se mantiene desde el código (no desde el motor).
+-- ----------------------------------------------------------------------------
+-- Pensado para instalación nueva. Ejecutar:
+--   DROP DATABASE IF EXISTS vidrios_inventory;   -- si quieres empezar de cero
+--   mysql -u root < vidrios-inventory/database/schema.sql
+--   php vidrios-inventory/database/install.php   -- crea el admin demo
 -- ============================================================================
 
 CREATE DATABASE IF NOT EXISTS `vidrios_inventory`
@@ -14,12 +21,9 @@ USE `vidrios_inventory`;
 SET NAMES utf8mb4;
 
 -- ============================================================================
--- TABLAS BASE
+-- USUARIOS / SEGURIDAD (RBAC)
 -- ============================================================================
 
--- ----------------------------------------------------------------------------
--- usuarios
--- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS `usuarios` (
     `id`            INT UNSIGNED  AUTO_INCREMENT PRIMARY KEY,
     `nombre`        VARCHAR(120)  NOT NULL,
@@ -32,162 +36,6 @@ CREATE TABLE IF NOT EXISTS `usuarios` (
     `created_at`    DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
     INDEX `idx_usuarios_rol_id` (`rol_id`)
 ) ENGINE=InnoDB;
-
--- ----------------------------------------------------------------------------
--- categorias
--- ----------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS `categorias` (
-    `id`          INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    `nombre`      VARCHAR(120) NOT NULL UNIQUE,
-    `descripcion` VARCHAR(255) NULL,
-    `estado`      TINYINT(1)   NOT NULL DEFAULT 1,
-    `created_at`  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
-) ENGINE=InnoDB;
-
--- ----------------------------------------------------------------------------
--- proveedores  (las columnas de geografía se agregan más abajo con ALTER)
--- ----------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS `proveedores` (
-    `id`         INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    `nombre`     VARCHAR(160) NOT NULL,
-    `contacto`   VARCHAR(120) NULL,
-    `telefono`   VARCHAR(40)  NULL,
-    `email`      VARCHAR(160) NULL,
-    `direccion`  VARCHAR(255) NULL,
-    `estado`     TINYINT(1)   NOT NULL DEFAULT 1,
-    `created_at` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
-) ENGINE=InnoDB;
-
--- ----------------------------------------------------------------------------
--- productos
--- ----------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS `productos` (
-    `id`            INT UNSIGNED   AUTO_INCREMENT PRIMARY KEY,
-    `codigo`        VARCHAR(40)    NOT NULL UNIQUE,
-    `nombre`        VARCHAR(160)   NOT NULL,
-    `descripcion`   TEXT           NULL,
-    `categoria_id`  INT UNSIGNED   NULL,
-    `proveedor_id`  INT UNSIGNED   NULL,
-    `unidad`        VARCHAR(20)    NOT NULL DEFAULT 'm²',
-    `ancho`         DECIMAL(10,2)  NULL,
-    `alto`          DECIMAL(10,2)  NULL,
-    `grosor`        DECIMAL(10,2)  NULL,
-    `longitud`      DECIMAL(10,2)  NULL,
-    `diametro`      DECIMAL(10,2)  NULL,
-    `precio_compra` DECIMAL(12,2)  NOT NULL DEFAULT 0,
-    `precio_venta`  DECIMAL(12,2)  NOT NULL DEFAULT 0,
-    `stock_actual`  DECIMAL(12,2)  NOT NULL DEFAULT 0,
-    `stock_minimo`  DECIMAL(12,2)  NOT NULL DEFAULT 1,
-    `imagen`        VARCHAR(255)   NULL,
-    `estado`        TINYINT(1)     NOT NULL DEFAULT 1,
-    `created_at`    DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    INDEX `idx_productos_codigo`    (`codigo`),
-    INDEX `idx_productos_categoria` (`categoria_id`),
-    INDEX `idx_productos_estado`    (`estado`),
-    CONSTRAINT `fk_productos_categoria` FOREIGN KEY (`categoria_id`)
-        REFERENCES `categorias`(`id`) ON DELETE SET NULL ON UPDATE CASCADE,
-    CONSTRAINT `fk_productos_proveedor` FOREIGN KEY (`proveedor_id`)
-        REFERENCES `proveedores`(`id`) ON DELETE SET NULL ON UPDATE CASCADE
-) ENGINE=InnoDB;
-
--- ----------------------------------------------------------------------------
--- movimientos
--- ----------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS `movimientos` (
-    `id`             BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    `producto_id`    INT UNSIGNED    NOT NULL,
-    `tipo`           ENUM('entrada','salida','ajuste') NOT NULL,
-    `motivo`         VARCHAR(20)     NULL,   -- venta|encargo|accidente|merma (sólo para salidas)
-    `cantidad`       DECIMAL(12,2)   NOT NULL,
-    `stock_anterior` DECIMAL(12,2)   NOT NULL,
-    `stock_nuevo`    DECIMAL(12,2)   NOT NULL,
-    `usuario_id`     INT UNSIGNED    NULL,
-    `proveedor_id`   INT UNSIGNED    NULL,
-    `encargo_id`     INT UNSIGNED    NULL,   -- referencia al encargo si motivo='encargo'
-    `cliente`        VARCHAR(160)    NULL,   -- ventas/encargos
-    `total`          DECIMAL(12,2)   NULL,   -- ventas
-    `fecha_entrega`  DATE            NULL,   -- encargos
-    `evidencia`      TEXT            NULL,   -- accidentes/mermas (descripción detallada)
-    `observacion`    VARCHAR(500)    NULL,
-    `created_at`     DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    INDEX `idx_movs_producto` (`producto_id`),
-    INDEX `idx_movs_tipo`     (`tipo`),
-    INDEX `idx_movs_motivo`   (`motivo`),
-    INDEX `idx_movs_encargo`  (`encargo_id`),
-    INDEX `idx_movs_created`  (`created_at`),
-    CONSTRAINT `fk_movs_producto`  FOREIGN KEY (`producto_id`)
-        REFERENCES `productos`(`id`)   ON DELETE CASCADE  ON UPDATE CASCADE,
-    CONSTRAINT `fk_movs_usuario`   FOREIGN KEY (`usuario_id`)
-        REFERENCES `usuarios`(`id`)    ON DELETE SET NULL ON UPDATE CASCADE,
-    CONSTRAINT `fk_movs_proveedor` FOREIGN KEY (`proveedor_id`)
-        REFERENCES `proveedores`(`id`) ON DELETE SET NULL ON UPDATE CASCADE
-) ENGINE=InnoDB;
-
--- ----------------------------------------------------------------------------
--- Migración idempotente: agregar las columnas nuevas (motivo, cliente, total,
--- fecha_entrega, evidencia) a BDs ya creadas con el schema anterior.
--- ----------------------------------------------------------------------------
--- ----------------------------------------------------------------------------
--- Migración idempotente: agregar longitud y diametro a productos para soportar
--- unidades como "tubo" (longitud+diámetro) y "metro lineal" (longitud).
--- ----------------------------------------------------------------------------
-SET @col_longitud = (SELECT COUNT(*) FROM information_schema.COLUMNS
-                     WHERE TABLE_SCHEMA = 'vidrios_inventory'
-                       AND TABLE_NAME = 'productos'
-                       AND COLUMN_NAME = 'longitud');
-SET @sql = IF(@col_longitud = 0,
-    'ALTER TABLE `productos`
-        ADD COLUMN `longitud` DECIMAL(10,2) NULL AFTER `grosor`,
-        ADD COLUMN `diametro` DECIMAL(10,2) NULL AFTER `longitud`',
-    'SELECT 1');
-PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
-
--- ----------------------------------------------------------------------------
--- Migración idempotente: stock_actual / stock_minimo / cantidad / stock_*
--- pasan a DECIMAL(12,2) para soportar unidades fraccionarias (m², metro
--- lineal, lámina parcial). Sólo se aplica si la columna sigue como INT.
--- ----------------------------------------------------------------------------
-SET @col_stock_type = (SELECT DATA_TYPE FROM information_schema.COLUMNS
-                       WHERE TABLE_SCHEMA = 'vidrios_inventory'
-                         AND TABLE_NAME = 'productos'
-                         AND COLUMN_NAME = 'stock_actual');
-SET @sql = IF(@col_stock_type = 'int',
-    'ALTER TABLE `productos`
-        MODIFY COLUMN `stock_actual` DECIMAL(12,2) NOT NULL DEFAULT 0,
-        MODIFY COLUMN `stock_minimo` DECIMAL(12,2) NOT NULL DEFAULT 1',
-    'SELECT 1');
-PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
-
-SET @col_cant_type = (SELECT DATA_TYPE FROM information_schema.COLUMNS
-                      WHERE TABLE_SCHEMA = 'vidrios_inventory'
-                        AND TABLE_NAME = 'movimientos'
-                        AND COLUMN_NAME = 'cantidad');
-SET @sql = IF(@col_cant_type = 'int',
-    'ALTER TABLE `movimientos`
-        MODIFY COLUMN `cantidad`       DECIMAL(12,2) NOT NULL,
-        MODIFY COLUMN `stock_anterior` DECIMAL(12,2) NOT NULL,
-        MODIFY COLUMN `stock_nuevo`    DECIMAL(12,2) NOT NULL',
-    'SELECT 1');
-PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
-
-SET @col_motivo = (SELECT COUNT(*) FROM information_schema.COLUMNS
-                   WHERE TABLE_SCHEMA = 'vidrios_inventory'
-                     AND TABLE_NAME = 'movimientos'
-                     AND COLUMN_NAME = 'motivo');
-SET @sql = IF(@col_motivo = 0,
-    'ALTER TABLE `movimientos`
-        ADD COLUMN `motivo`        VARCHAR(20)   NULL AFTER `tipo`,
-        ADD COLUMN `cliente`       VARCHAR(160)  NULL AFTER `proveedor_id`,
-        ADD COLUMN `total`         DECIMAL(12,2) NULL AFTER `cliente`,
-        ADD COLUMN `fecha_entrega` DATE          NULL AFTER `total`,
-        ADD COLUMN `evidencia`     TEXT          NULL AFTER `fecha_entrega`,
-        ADD INDEX  `idx_movs_motivo` (`motivo`)',
-    'SELECT 1');
-PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
-
--- ============================================================================
--- ROLES Y PERMISOS (RBAC)
--- ============================================================================
 
 CREATE TABLE IF NOT EXISTS `roles` (
     `id`          INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -211,53 +59,147 @@ CREATE TABLE IF NOT EXISTS `roles_permisos` (
     `rol_id`     INT UNSIGNED NOT NULL,
     `permiso_id` INT UNSIGNED NOT NULL,
     PRIMARY KEY (`rol_id`, `permiso_id`),
-    CONSTRAINT `fk_rp_rol`     FOREIGN KEY (`rol_id`)     REFERENCES `roles`(`id`)    ON DELETE CASCADE,
-    CONSTRAINT `fk_rp_permiso` FOREIGN KEY (`permiso_id`) REFERENCES `permisos`(`id`) ON DELETE CASCADE
+    INDEX `idx_rp_permiso` (`permiso_id`)
 ) ENGINE=InnoDB;
 
--- Permisos extra individuales por usuario (encima de los del rol).
 CREATE TABLE IF NOT EXISTS `usuarios_permisos` (
     `usuario_id` INT UNSIGNED NOT NULL,
     `permiso_id` INT UNSIGNED NOT NULL,
     PRIMARY KEY (`usuario_id`, `permiso_id`),
-    CONSTRAINT `fk_up_usuario` FOREIGN KEY (`usuario_id`) REFERENCES `usuarios`(`id`) ON DELETE CASCADE,
-    CONSTRAINT `fk_up_permiso` FOREIGN KEY (`permiso_id`) REFERENCES `permisos`(`id`) ON DELETE CASCADE
+    INDEX `idx_up_permiso` (`permiso_id`)
 ) ENGINE=InnoDB;
 
--- ----------------------------------------------------------------------------
--- Migración para BDs existentes: si la columna `usuarios.rol_id` no existe
--- la agregamos sin romper datos. Estos bloques son idempotentes — re-ejecutar
--- el schema no fallará si la columna o la FK ya existen.
--- ----------------------------------------------------------------------------
-SET @col_rolid = (SELECT COUNT(*) FROM information_schema.COLUMNS
-                  WHERE TABLE_SCHEMA = 'vidrios_inventory'
-                    AND TABLE_NAME = 'usuarios'
-                    AND COLUMN_NAME = 'rol_id');
-SET @sql = IF(@col_rolid = 0,
-    'ALTER TABLE `usuarios`
-        ADD COLUMN `rol_id` INT UNSIGNED NULL AFTER `rol`,
-        ADD INDEX `idx_usuarios_rol_id` (`rol_id`),
-        MODIFY COLUMN `rol` VARCHAR(50) NOT NULL DEFAULT ''operador''',
-    'SELECT 1');
-PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
+-- ============================================================================
+-- GEOGRAFIA JERARQUICA (tablas sueltas — sin FKs)
+-- ============================================================================
 
--- FK usuarios.rol_id → roles.id
-SET @fk_rol = (SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS
-               WHERE CONSTRAINT_SCHEMA = 'vidrios_inventory'
-                 AND TABLE_NAME = 'usuarios'
-                 AND CONSTRAINT_NAME = 'fk_usuarios_rol');
-SET @sql = IF(@fk_rol = 0,
-    'ALTER TABLE `usuarios`
-        ADD CONSTRAINT `fk_usuarios_rol` FOREIGN KEY (`rol_id`)
-        REFERENCES `roles`(`id`) ON DELETE SET NULL ON UPDATE CASCADE',
-    'SELECT 1');
-PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
+CREATE TABLE IF NOT EXISTS `paises` (
+    `id`     INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    `nombre` VARCHAR(80) NOT NULL UNIQUE,
+    `codigo` VARCHAR(3)  NULL UNIQUE
+) ENGINE=InnoDB;
 
--- Backfill: para usuarios con rol_id NULL, copiar desde el nombre del rol.
-UPDATE `usuarios` u
-   JOIN `roles` r ON r.nombre = u.rol
-   SET u.rol_id = r.id
- WHERE u.rol_id IS NULL;
+CREATE TABLE IF NOT EXISTS `departamentos` (
+    `id`      INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    `pais_id` INT UNSIGNED NOT NULL,
+    `nombre`  VARCHAR(120) NOT NULL,
+    INDEX `idx_dep_pais` (`pais_id`),
+    UNIQUE KEY `uniq_dep` (`pais_id`, `nombre`)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS `provincias` (
+    `id`              INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    `departamento_id` INT UNSIGNED NOT NULL,
+    `nombre`          VARCHAR(120) NOT NULL,
+    INDEX `idx_prov_dep` (`departamento_id`),
+    UNIQUE KEY `uniq_prov` (`departamento_id`, `nombre`)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS `distritos` (
+    `id`           INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    `provincia_id` INT UNSIGNED NOT NULL,
+    `nombre`       VARCHAR(120) NOT NULL,
+    INDEX `idx_dist_prov` (`provincia_id`),
+    UNIQUE KEY `uniq_dist` (`provincia_id`, `nombre`)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS `ciudades` (
+    `id`          INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    `distrito_id` INT UNSIGNED NOT NULL,
+    `nombre`      VARCHAR(120) NOT NULL,
+    INDEX `idx_ciu_dist` (`distrito_id`),
+    UNIQUE KEY `uniq_ciu` (`distrito_id`, `nombre`)
+) ENGINE=InnoDB;
+
+-- ============================================================================
+-- CATALOGOS
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS `categorias` (
+    `id`          INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    `nombre`      VARCHAR(120) NOT NULL UNIQUE,
+    `descripcion` VARCHAR(255) NULL,
+    `estado`      TINYINT(1)   NOT NULL DEFAULT 1,
+    `created_at`  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS `proveedores` (
+    `id`                    INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    `nombre`                VARCHAR(160) NOT NULL,
+    `contacto`              VARCHAR(120) NULL,
+    `telefono`              VARCHAR(40)  NULL,
+    `email`                 VARCHAR(160) NULL,
+    `direccion`             VARCHAR(255) NULL,
+    `descripcion_productos` TEXT         NULL,
+    `pais_id`               INT UNSIGNED NULL,
+    `departamento_id`       INT UNSIGNED NULL,
+    `provincia_id`          INT UNSIGNED NULL,
+    `distrito_id`           INT UNSIGNED NULL,
+    `ciudad_id`             INT UNSIGNED NULL,
+    `estado`                TINYINT(1)   NOT NULL DEFAULT 1,
+    `created_at`            DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX `idx_prov_pais`         (`pais_id`),
+    INDEX `idx_prov_departamento` (`departamento_id`),
+    INDEX `idx_prov_provincia`    (`provincia_id`),
+    INDEX `idx_prov_distrito`     (`distrito_id`),
+    INDEX `idx_prov_ciudad`       (`ciudad_id`)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS `productos` (
+    `id`            INT UNSIGNED   AUTO_INCREMENT PRIMARY KEY,
+    `codigo`        VARCHAR(40)    NOT NULL UNIQUE,
+    `nombre`        VARCHAR(160)   NOT NULL,
+    `descripcion`   TEXT           NULL,
+    `categoria_id`  INT UNSIGNED   NULL,
+    `proveedor_id`  INT UNSIGNED   NULL,
+    `unidad`        VARCHAR(20)    NOT NULL DEFAULT 'm²',
+    `ancho`         DECIMAL(10,2)  NULL,
+    `alto`          DECIMAL(10,2)  NULL,
+    `grosor`        DECIMAL(10,2)  NULL,
+    `longitud`      DECIMAL(10,2)  NULL,
+    `diametro`      DECIMAL(10,2)  NULL,
+    `precio_compra` DECIMAL(12,2)  NOT NULL DEFAULT 0,
+    `precio_venta`  DECIMAL(12,2)  NOT NULL DEFAULT 0,
+    `stock_actual`  DECIMAL(12,2)  NOT NULL DEFAULT 0,
+    `stock_minimo`  DECIMAL(12,2)  NOT NULL DEFAULT 1,
+    `imagen`        VARCHAR(255)   NULL,
+    `estado`        TINYINT(1)     NOT NULL DEFAULT 1,
+    `created_at`    DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX `idx_productos_codigo`    (`codigo`),
+    INDEX `idx_productos_categoria` (`categoria_id`),
+    INDEX `idx_productos_proveedor` (`proveedor_id`),
+    INDEX `idx_productos_estado`    (`estado`)
+) ENGINE=InnoDB;
+
+-- ============================================================================
+-- MOVIMIENTOS DE STOCK
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS `movimientos` (
+    `id`             BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    `producto_id`    INT UNSIGNED    NOT NULL,
+    `tipo`           ENUM('entrada','salida','ajuste') NOT NULL,
+    `motivo`         VARCHAR(20)     NULL,   -- venta|encargo|accidente|merma (sólo para salidas)
+    `cantidad`       DECIMAL(12,2)   NOT NULL,
+    `stock_anterior` DECIMAL(12,2)   NOT NULL,
+    `stock_nuevo`    DECIMAL(12,2)   NOT NULL,
+    `usuario_id`     INT UNSIGNED    NULL,
+    `proveedor_id`   INT UNSIGNED    NULL,
+    `encargo_id`     INT UNSIGNED    NULL,
+    `cliente`        VARCHAR(160)    NULL,
+    `total`          DECIMAL(12,2)   NULL,
+    `fecha_entrega`  DATE            NULL,
+    `evidencia`      TEXT            NULL,
+    `observacion`    VARCHAR(500)    NULL,
+    `created_at`     DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX `idx_movs_producto`  (`producto_id`),
+    INDEX `idx_movs_tipo`      (`tipo`),
+    INDEX `idx_movs_motivo`    (`motivo`),
+    INDEX `idx_movs_usuario`   (`usuario_id`),
+    INDEX `idx_movs_proveedor` (`proveedor_id`),
+    INDEX `idx_movs_encargo`   (`encargo_id`),
+    INDEX `idx_movs_created`   (`created_at`)
+) ENGINE=InnoDB;
 
 -- ============================================================================
 -- ENCARGOS (clientes que reservan productos para entrega futura)
@@ -275,10 +217,9 @@ CREATE TABLE IF NOT EXISTS `encargos` (
     `estado`         ENUM('pendiente','entregado','cancelado') NOT NULL DEFAULT 'pendiente',
     `usuario_id`     INT UNSIGNED   NULL,
     `created_at`     DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    INDEX `idx_encargos_estado` (`estado`),
-    INDEX `idx_encargos_fecha`  (`fecha_entrega`),
-    CONSTRAINT `fk_encargos_usuario` FOREIGN KEY (`usuario_id`)
-        REFERENCES `usuarios`(`id`) ON DELETE SET NULL ON UPDATE CASCADE
+    INDEX `idx_encargos_estado`  (`estado`),
+    INDEX `idx_encargos_fecha`   (`fecha_entrega`),
+    INDEX `idx_encargos_usuario` (`usuario_id`)
 ) ENGINE=InnoDB;
 
 CREATE TABLE IF NOT EXISTS `encargo_items` (
@@ -288,46 +229,8 @@ CREATE TABLE IF NOT EXISTS `encargo_items` (
     `cantidad`        INT           NOT NULL,
     `precio_unitario` DECIMAL(12,2) NULL,
     INDEX `idx_ei_encargo`  (`encargo_id`),
-    INDEX `idx_ei_producto` (`producto_id`),
-    CONSTRAINT `fk_ei_encargo`  FOREIGN KEY (`encargo_id`)
-        REFERENCES `encargos`(`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-    CONSTRAINT `fk_ei_producto` FOREIGN KEY (`producto_id`)
-        REFERENCES `productos`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+    INDEX `idx_ei_producto` (`producto_id`)
 ) ENGINE=InnoDB;
-
--- Migración idempotente: agregar la FK encargo_id en movimientos si no existe.
-SET @col_encargo = (SELECT COUNT(*) FROM information_schema.COLUMNS
-                    WHERE TABLE_SCHEMA = 'vidrios_inventory'
-                      AND TABLE_NAME = 'movimientos'
-                      AND COLUMN_NAME = 'encargo_id');
-SET @sql = IF(@col_encargo = 0,
-    'ALTER TABLE `movimientos`
-        ADD COLUMN `encargo_id` INT UNSIGNED NULL AFTER `proveedor_id`,
-        ADD INDEX `idx_movs_encargo` (`encargo_id`)',
-    'SELECT 1');
-PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
-
--- Migración idempotente: encargos.notas_entrega para guardar el consolidado
--- de retazos generados al marcar el encargo como entregado.
-SET @col_ne = (SELECT COUNT(*) FROM information_schema.COLUMNS
-               WHERE TABLE_SCHEMA = 'vidrios_inventory'
-                 AND TABLE_NAME = 'encargos'
-                 AND COLUMN_NAME = 'notas_entrega');
-SET @sql = IF(@col_ne = 0,
-    'ALTER TABLE `encargos` ADD COLUMN `notas_entrega` TEXT NULL AFTER `detalles`',
-    'SELECT 1');
-PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
-
-SET @fk_enc = (SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS
-               WHERE CONSTRAINT_SCHEMA = 'vidrios_inventory'
-                 AND TABLE_NAME = 'movimientos'
-                 AND CONSTRAINT_NAME = 'fk_movs_encargo');
-SET @sql = IF(@fk_enc = 0,
-    'ALTER TABLE `movimientos`
-        ADD CONSTRAINT `fk_movs_encargo` FOREIGN KEY (`encargo_id`)
-        REFERENCES `encargos`(`id`) ON DELETE SET NULL ON UPDATE CASCADE',
-    'SELECT 1');
-PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
 
 -- ============================================================================
 -- RETAZOS (sobrantes aprovechables que NO descuentan stock)
@@ -349,11 +252,8 @@ CREATE TABLE IF NOT EXISTS `retazos` (
     INDEX `idx_retazos_producto` (`producto_id`),
     INDEX `idx_retazos_origen`   (`origen`, `origen_id`),
     INDEX `idx_retazos_aprov`    (`aprovechado`),
-    INDEX `idx_retazos_created`  (`created_at`),
-    CONSTRAINT `fk_retazos_producto` FOREIGN KEY (`producto_id`)
-        REFERENCES `productos`(`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-    CONSTRAINT `fk_retazos_usuario`  FOREIGN KEY (`usuario_id`)
-        REFERENCES `usuarios`(`id`)  ON DELETE SET NULL ON UPDATE CASCADE
+    INDEX `idx_retazos_usuario`  (`usuario_id`),
+    INDEX `idx_retazos_created`  (`created_at`)
 ) ENGINE=InnoDB;
 
 -- ============================================================================
@@ -373,89 +273,11 @@ CREATE TABLE IF NOT EXISTS `auditoria` (
     `created_at`    DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
     INDEX `idx_aud_usuario` (`usuario_id`),
     INDEX `idx_aud_entidad` (`entidad`, `entidad_id`),
-    INDEX `idx_aud_fecha`   (`created_at`),
-    CONSTRAINT `fk_aud_usuario` FOREIGN KEY (`usuario_id`)
-        REFERENCES `usuarios`(`id`) ON DELETE SET NULL
+    INDEX `idx_aud_fecha`   (`created_at`)
 ) ENGINE=InnoDB;
 
 -- ============================================================================
--- GEOGRAFIA JERARQUICA
--- ============================================================================
-
-CREATE TABLE IF NOT EXISTS `paises` (
-    `id`     INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    `nombre` VARCHAR(80) NOT NULL UNIQUE,
-    `codigo` VARCHAR(3)  NULL UNIQUE
-) ENGINE=InnoDB;
-
-CREATE TABLE IF NOT EXISTS `departamentos` (
-    `id`      INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    `pais_id` INT UNSIGNED NOT NULL,
-    `nombre`  VARCHAR(120) NOT NULL,
-    INDEX `idx_dep_pais` (`pais_id`),
-    UNIQUE KEY `uniq_dep` (`pais_id`, `nombre`),
-    CONSTRAINT `fk_dep_pais` FOREIGN KEY (`pais_id`)
-        REFERENCES `paises`(`id`) ON DELETE CASCADE
-) ENGINE=InnoDB;
-
-CREATE TABLE IF NOT EXISTS `provincias` (
-    `id`              INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    `departamento_id` INT UNSIGNED NOT NULL,
-    `nombre`          VARCHAR(120) NOT NULL,
-    INDEX `idx_prov_dep` (`departamento_id`),
-    UNIQUE KEY `uniq_prov` (`departamento_id`, `nombre`),
-    CONSTRAINT `fk_prov_dep` FOREIGN KEY (`departamento_id`)
-        REFERENCES `departamentos`(`id`) ON DELETE CASCADE
-) ENGINE=InnoDB;
-
-CREATE TABLE IF NOT EXISTS `distritos` (
-    `id`           INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    `provincia_id` INT UNSIGNED NOT NULL,
-    `nombre`       VARCHAR(120) NOT NULL,
-    INDEX `idx_dist_prov` (`provincia_id`),
-    UNIQUE KEY `uniq_dist` (`provincia_id`, `nombre`),
-    CONSTRAINT `fk_dist_prov` FOREIGN KEY (`provincia_id`)
-        REFERENCES `provincias`(`id`) ON DELETE CASCADE
-) ENGINE=InnoDB;
-
-CREATE TABLE IF NOT EXISTS `ciudades` (
-    `id`          INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    `distrito_id` INT UNSIGNED NOT NULL,
-    `nombre`      VARCHAR(120) NOT NULL,
-    INDEX `idx_ciu_dist` (`distrito_id`),
-    UNIQUE KEY `uniq_ciu` (`distrito_id`, `nombre`),
-    CONSTRAINT `fk_ciu_dist` FOREIGN KEY (`distrito_id`)
-        REFERENCES `distritos`(`id`) ON DELETE CASCADE
-) ENGINE=InnoDB;
-
--- ----------------------------------------------------------------------------
--- Agregar columnas de geografía y descripción a proveedores
--- ----------------------------------------------------------------------------
-ALTER TABLE `proveedores`
-    ADD COLUMN `descripcion_productos` TEXT         NULL,
-    ADD COLUMN `pais_id`               INT UNSIGNED NULL,
-    ADD COLUMN `departamento_id`       INT UNSIGNED NULL,
-    ADD COLUMN `provincia_id`          INT UNSIGNED NULL,
-    ADD COLUMN `distrito_id`           INT UNSIGNED NULL,
-    ADD COLUMN `ciudad_id`             INT UNSIGNED NULL;
-
--- FKs de geografía en proveedores (solo se agregan si aún no existen)
-SET @existe = (SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS
-               WHERE CONSTRAINT_SCHEMA = 'vidrios_inventory'
-                 AND TABLE_NAME = 'proveedores'
-                 AND CONSTRAINT_NAME = 'fk_prov_pais');
-SET @sql = IF(@existe = 0,
-    'ALTER TABLE `proveedores`
-        ADD CONSTRAINT `fk_prov_pais`         FOREIGN KEY (`pais_id`)         REFERENCES `paises`(`id`)         ON DELETE SET NULL,
-        ADD CONSTRAINT `fk_prov_departamento` FOREIGN KEY (`departamento_id`) REFERENCES `departamentos`(`id`) ON DELETE SET NULL,
-        ADD CONSTRAINT `fk_prov_provincia`    FOREIGN KEY (`provincia_id`)    REFERENCES `provincias`(`id`)    ON DELETE SET NULL,
-        ADD CONSTRAINT `fk_prov_distrito`     FOREIGN KEY (`distrito_id`)     REFERENCES `distritos`(`id`)     ON DELETE SET NULL,
-        ADD CONSTRAINT `fk_prov_ciudad`       FOREIGN KEY (`ciudad_id`)       REFERENCES `ciudades`(`id`)      ON DELETE SET NULL',
-    'SELECT 1');
-PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
-
--- ============================================================================
--- PEDIDOS
+-- PEDIDOS A PROVEEDOR
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS `pedidos` (
@@ -472,11 +294,8 @@ CREATE TABLE IF NOT EXISTS `pedidos` (
     `created_at`    DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP,
     INDEX `idx_ped_estado`    (`estado`),
     INDEX `idx_ped_proveedor` (`proveedor_id`),
-    INDEX `idx_ped_fecha`     (`fecha_pedido`),
-    CONSTRAINT `fk_ped_proveedor` FOREIGN KEY (`proveedor_id`)
-        REFERENCES `proveedores`(`id`) ON DELETE SET NULL,
-    CONSTRAINT `fk_ped_usuario`   FOREIGN KEY (`usuario_id`)
-        REFERENCES `usuarios`(`id`)   ON DELETE SET NULL
+    INDEX `idx_ped_usuario`   (`usuario_id`),
+    INDEX `idx_ped_fecha`     (`fecha_pedido`)
 ) ENGINE=InnoDB;
 
 -- ============================================================================
@@ -579,7 +398,7 @@ WHERE r.nombre = 'admin';
 
 -- Asignar permisos limitados al rol operador
 INSERT IGNORE INTO `roles_permisos` (`rol_id`, `permiso_id`)
-SELECT r.id, p.id FROM `roles` r JOIN `permisos` p
+SELECT r.id, p.id FROM `roles` r INNER JOIN `permisos` p
   ON p.codigo IN (
     'producto.ver', 'categoria.ver', 'proveedor.ver',
     'movimiento.ver', 'movimiento.entrada', 'movimiento.salida',
@@ -587,6 +406,12 @@ SELECT r.id, p.id FROM `roles` r JOIN `permisos` p
     'pedido.ver'
   )
 WHERE r.nombre = 'operador';
+
+-- Backfill: para usuarios con rol_id NULL, copiar desde el nombre del rol.
+UPDATE `usuarios` u
+   INNER JOIN `roles` r ON r.nombre = u.rol
+   SET u.rol_id = r.id
+ WHERE u.rol_id IS NULL;
 
 -- Geografía: países
 INSERT IGNORE INTO `paises` (`nombre`, `codigo`) VALUES
@@ -610,22 +435,22 @@ SELECT id, 'Ciudad de México' FROM paises WHERE nombre = 'México';
 
 -- Provincias
 INSERT IGNORE INTO `provincias` (`departamento_id`, `nombre`)
-SELECT d.id, 'Bogotá D.C.' FROM departamentos d JOIN paises p ON p.id = d.pais_id
+SELECT d.id, 'Bogotá D.C.' FROM departamentos d INNER JOIN paises p ON p.id = d.pais_id
 WHERE p.nombre = 'Colombia' AND d.nombre = 'Cundinamarca';
 INSERT IGNORE INTO `provincias` (`departamento_id`, `nombre`)
-SELECT d.id, 'Valle de Aburrá' FROM departamentos d JOIN paises p ON p.id = d.pais_id
+SELECT d.id, 'Valle de Aburrá' FROM departamentos d INNER JOIN paises p ON p.id = d.pais_id
 WHERE p.nombre = 'Colombia' AND d.nombre = 'Antioquia';
 INSERT IGNORE INTO `provincias` (`departamento_id`, `nombre`)
-SELECT d.id, 'Sur del Valle' FROM departamentos d JOIN paises p ON p.id = d.pais_id
+SELECT d.id, 'Sur del Valle' FROM departamentos d INNER JOIN paises p ON p.id = d.pais_id
 WHERE p.nombre = 'Colombia' AND d.nombre = 'Valle del Cauca';
 INSERT IGNORE INTO `provincias` (`departamento_id`, `nombre`)
-SELECT d.id, 'Lima' FROM departamentos d JOIN paises p ON p.id = d.pais_id
+SELECT d.id, 'Lima' FROM departamentos d INNER JOIN paises p ON p.id = d.pais_id
 WHERE p.nombre = 'Perú' AND d.nombre = 'Lima';
 INSERT IGNORE INTO `provincias` (`departamento_id`, `nombre`)
-SELECT d.id, 'Arequipa' FROM departamentos d JOIN paises p ON p.id = d.pais_id
+SELECT d.id, 'Arequipa' FROM departamentos d INNER JOIN paises p ON p.id = d.pais_id
 WHERE p.nombre = 'Perú' AND d.nombre = 'Arequipa';
 INSERT IGNORE INTO `provincias` (`departamento_id`, `nombre`)
-SELECT d.id, 'CDMX' FROM departamentos d JOIN paises p ON p.id = d.pais_id
+SELECT d.id, 'CDMX' FROM departamentos d INNER JOIN paises p ON p.id = d.pais_id
 WHERE p.nombre = 'México' AND d.nombre = 'Ciudad de México';
 
 -- Distritos

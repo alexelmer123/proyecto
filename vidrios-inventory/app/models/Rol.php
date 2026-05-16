@@ -34,7 +34,7 @@ final class Rol extends BaseModel
         $stmt = $this->db->prepare("
             SELECT p.codigo
               FROM roles_permisos rp
-              JOIN permisos p ON p.id = rp.permiso_id
+              INNER JOIN permisos p ON p.id = rp.permiso_id
              WHERE rp.rol_id = :id
         ");
         $stmt->execute([':id' => $rolId]);
@@ -57,8 +57,8 @@ final class Rol extends BaseModel
         $stmt = $this->db->prepare("
             SELECT p.codigo
               FROM roles r
-              JOIN roles_permisos rp ON rp.rol_id = r.id
-              JOIN permisos p ON p.id = rp.permiso_id
+              INNER JOIN roles_permisos rp ON rp.rol_id = r.id
+              INNER JOIN permisos p ON p.id = rp.permiso_id
              WHERE r.nombre = :n AND r.activo = 1
         ");
         $stmt->execute([':n' => $rolNombre]);

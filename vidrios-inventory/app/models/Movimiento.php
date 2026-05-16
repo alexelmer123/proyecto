@@ -108,7 +108,7 @@ final class Movimiento extends BaseModel
                          :cl, :to, :fe, :ev, :o, NOW())"
             );
             // Si el id del usuario no existe en la tabla `usuarios` o es <=0,
-            // persistimos NULL (la FK es ON DELETE SET NULL).
+            // persistimos NULL (relación lógica, sin FK).
             $usuarioIdFk = $this->resolverUsuarioId($usuarioId);
 
             $ins->bindValue(':p',  $productoId,  PDO::PARAM_INT);
